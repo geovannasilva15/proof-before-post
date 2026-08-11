@@ -4,7 +4,7 @@
 
 Proof Before Post is a bilingual media and information literacy experience that helps young digital creators examine the evidence behind a draft before it reaches an audience. The product guides reflection without asking AI to issue a truth verdict.
 
-**Live demo:** [proof-before-post.corujarh-3863.chatgpt.site](https://proof-before-post.corujarh-3863.chatgpt.site)
+**Public demo:** deployment in progress.
 
 ## Why this matters
 
@@ -117,9 +117,12 @@ npm install
 npm run dev
 ```
 
-## Author
+## Team
 
-Developed by [Geovanna Eduarda da Silva](https://github.com/geovannasilva15).
+Developed by:
+
+- [Geovanna Eduarda da Silva](https://github.com/geovannasilva15)
+- [Matheus Barcelli Marques de Lima (Matheus Marks)](https://github.com/BRMARKS)
 
 ## License
 
