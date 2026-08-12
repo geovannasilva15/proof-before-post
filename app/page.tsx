@@ -15,10 +15,11 @@ import {
 import { translate, type TranslationKey } from "../lib/i18n";
 import { buildReceiptSummary, downloadReceiptPng, type ReceiptData } from "../lib/receipt";
 import { buildSuggestedRevision, diffDrafts, type EditorialAction } from "../lib/revision";
-import { countCharacters, limitCharacters } from "../lib/text";
+import { countCharacters } from "../lib/text";
 
 type SupportId = "supports" | "partial" | "does_not_support" | "insufficient";
 type ReflectionId = "narrowed" | "context" | "uncertainty" | "removed" | "research";
+type RevisionOrigin = "none" | "generated" | "guided" | "manual";
 type SourceField = keyof Pick<ResearchSource,
   "title" | "authorOrInstitution" | "publishedAt" | "sourceType" | "measuredOrReported" |
   "doesNotEstablish" | "contextLimitations" | "relationSummary" | "url" | "accessedAt"
@@ -100,7 +101,7 @@ function analysisErrorMessage(language: Language, code: AnalysisErrorCode | null
 }
 
 export default function Home() {
-  const [language, setLanguage] = useState<Language>("en");
+  const [language, setLanguage] = useState<Language>("pt");
   const [step, setStep] = useState(0);
   const [guided, setGuided] = useState(false);
   const [draft, setDraft] = useState("");
@@ -121,12 +122,16 @@ export default function Home() {
   const [analysisError, setAnalysisError] = useState<AnalysisErrorCode | null>(null);
   const [needsResearchRefresh, setNeedsResearchRefresh] = useState(false);
   const [revisionTab, setRevisionTab] = useState<"original" | "revised">("revised");
+  const [revisionOrigin, setRevisionOrigin] = useState<RevisionOrigin>("none");
+  const [sourceEditedFields, setSourceEditedFields] = useState<SourceField[]>([]);
   const requestController = useRef<AbortController | null>(null);
   const narrator = useNarrator(language);
   const t = (key: TranslationKey, values?: Record<string, string | number>) => translate(language, key, values);
 
   useEffect(() => {
     document.documentElement.lang = language === "pt" ? "pt-BR" : "en";
+    const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    if (description) description.content = translate(language, "metaDescription");
   }, [language]);
   useEffect(() => () => requestController.current?.abort(), []);
   useEffect(() => narrator.stop, [step, language, narrator.stop]);
@@ -146,8 +151,10 @@ export default function Home() {
   const actionLabel = actionOptions.find((item) => item.id === action)?.title ?? "";
   const reflectionLabel = reflectionOptions.find((item) => item.id === reflection)?.label ?? "";
   const progressLabels = [t("progressDraft"), t("progressClaim"), t("progressEvidence"), t("progressDecision"), t("progressReview")];
-  const draftCount = countCharacters(draft, language);
-  const revisedCount = countCharacters(revised, language);
+  const draftCount = countCharacters(draft);
+  const revisedCount = countCharacters(revised);
+  const draftExcess = Math.max(0, draftCount - MAX_CHARACTERS);
+  const revisedExcess = Math.max(0, revisedCount - MAX_CHARACTERS);
   const diff = useMemo(() => diffDrafts(draft, revised, action === "research"), [action, draft, revised]);
 
   function resetReview() {
@@ -161,6 +168,8 @@ export default function Home() {
     setAction("");
     setRevisionAction("");
     setRevised("");
+    setRevisionOrigin("none");
+    setSourceEditedFields([]);
     setReflection("");
     setSourceNotes("");
     setCopied(false);
@@ -184,17 +193,31 @@ export default function Home() {
     narrator.stop();
     setLanguage(nextLanguage);
     if (guided) {
-      setDraft(guidedDemo[nextLanguage].draft);
-      setAnalysis(buildDemo(nextLanguage));
-      if (revised) setRevised(guidedDemo[nextLanguage].revision);
-      setNeedsResearchRefresh(false);
+      const nextDraft = guidedDemo[nextLanguage].draft;
+      const nextAnalysis = buildDemo(nextLanguage);
+      let nextSource = nextAnalysis.sources[0];
+      if (source && sourceEditedFields.length) {
+        for (const field of sourceEditedFields) nextSource = { ...nextSource, [field]: source[field] };
+        nextSource = { ...nextSource, provenance: "user" };
+        nextAnalysis.sources = [nextSource];
+      }
+      setDraft(nextDraft);
+      setAnalysis(nextAnalysis);
+      const nextClaim = nextAnalysis.claims.find((item) => item.id === selectedClaimId) ?? nextAnalysis.claims[0];
+      if (revisionOrigin === "guided") setRevised(guidedDemo[nextLanguage].revision);
+      if (revisionOrigin === "generated" && action) {
+        setRevised(buildSuggestedRevision(nextDraft, nextClaim, nextSource, action, nextLanguage));
+      }
+      setNeedsResearchRefresh(Boolean(
+        sourceEditedFields.length || revisionOrigin === "manual" || supportJustification.trim() || sourceNotes.trim(),
+      ));
     } else if (analysis?.mode === "live" && analysis.language !== nextLanguage) {
       setNeedsResearchRefresh(true);
     }
   }
 
   function updateDraft(value: string) {
-    setDraft(limitCharacters(value, MAX_CHARACTERS, language));
+    setDraft(value);
     if (guided) {
       setGuided(false);
       setAnalysis(null);
@@ -212,6 +235,7 @@ export default function Home() {
     setAction("");
     setRevisionAction("");
     setRevised("");
+    setRevisionOrigin("none");
     setReflection("");
   }
 
@@ -223,12 +247,23 @@ export default function Home() {
     setAction("");
     setRevisionAction("");
     setRevised("");
+    setRevisionOrigin("none");
     setReflection("");
   }
 
   function updateSource(field: SourceField, value: string) {
     if (!analysis || !source) return;
+    setSourceEditedFields((fields) => fields.includes(field) ? fields : [...fields, field]);
     setAnalysis({ ...analysis, sources: analysis.sources.map((item) => item.id === source.id ? { ...item, [field]: value, provenance: "user" } : item) });
+  }
+
+  function returnToResearch() {
+    const currentDraft = draft;
+    resetReview();
+    setGuided(false);
+    setAnalysis(null);
+    setDraft(currentDraft);
+    setStep(1);
   }
 
   async function analyzeDraft() {
@@ -270,6 +305,7 @@ export default function Home() {
       setRevised(buildSuggestedRevision(draft, claim, source, action, language));
       setReflection("");
       setRevisionAction(action);
+      setRevisionOrigin("generated");
     }
     setStep(5);
   }
@@ -315,13 +351,13 @@ export default function Home() {
     <main className="app-shell editor-page">
       <Header language={language} setLanguage={changeLanguage} home={() => setStep(0)} compact />
       <Progress step={step} labels={progressLabels} language={language} />
+      {needsResearchRefresh && <div className="translation-notice global" role="status"><span>i</span><p>{t("interfaceTranslated")}</p>{analysis?.mode === "live" && <button type="button" onClick={returnToResearch}>{t("reviewResearchLanguage")}</button>}</div>}
 
       {step === 1 && <>
         <StepIntro eyebrow={t("step1")} title={t("reviewBeforePost")} lead={t("step1Lead")} />
-        <section className="editor-grid"><div className="draft-card"><label htmlFor="draft">{t("yourDraft")}</label><textarea id="draft" aria-label={t("draftLabel")} value={draft} placeholder={t("draftPlaceholder")} onChange={(event) => updateDraft(event.target.value)} autoFocus /><div className={`draft-meta ${draftCount >= 1400 ? "near-limit" : ""}`}><span>{t("maxCharacters")}</span><strong aria-live="polite">{formatNumber(language, draftCount)} / {formatNumber(language, MAX_CHARACTERS)}</strong></div></div><InfoCard language={language} /></section>
-        {needsResearchRefresh && <div className="translation-notice" role="status"><span>i</span><p>{t("interfaceTranslated")}</p></div>}
+        <section className="editor-grid"><div className="draft-card"><label htmlFor="draft">{t("yourDraft")}</label><textarea id="draft" aria-label={t("draftLabel")} value={draft} placeholder={t("draftPlaceholder")} onChange={(event) => updateDraft(event.target.value)} autoFocus /><div className={`draft-meta ${draftCount >= 1400 ? "near-limit" : ""}`}><span>{t("maxCharacters")}</span><strong aria-live="polite">{t("characterCounter", { count: formatNumber(language, draftCount), maximum: formatNumber(language, MAX_CHARACTERS) })}</strong><small>{t("characterCountingHelp")}</small>{draftExcess > 0 && <p className="field-error" role="alert">{t("charactersOverLimit", { count: formatNumber(language, draftExcess) })}</p>}</div></div><InfoCard language={language} /></section>
         {analysisError && <div className="analysis-error" role="alert"><span>!</span><div><strong>{t("researchFailed")}</strong><p>{analysisErrorMessage(language, analysisError)}</p><button onClick={() => start(true)}>{t("openDemo")}</button></div></div>}
-        <Actions back={() => setStep(0)} language={language}><button className="text-button example-link" onClick={() => start(true)}>{t("useDemo")}</button><button className="primary-button" disabled={!draft.trim() || researching} onClick={analyzeDraft} aria-busy={researching}>{researching ? t("researching") : guided ? t("analyzeDemo") : t("researchClaims")}<span>{researching ? "…" : "→"}</span></button></Actions>
+        <Actions back={() => setStep(0)} language={language}><button className="text-button example-link" onClick={() => start(true)}>{t("useDemo")}</button><button className="primary-button" disabled={!draft.trim() || draftExcess > 0 || researching} onClick={analyzeDraft} aria-busy={researching}>{researching ? t("researching") : guided ? t("analyzeDemo") : t("researchClaims")}<span>{researching ? "…" : "→"}</span></button></Actions>
       </>}
 
       {step === 2 && analysis && <>
@@ -350,7 +386,7 @@ export default function Home() {
       {step === 5 && claim && source && <>
         <StepIntro eyebrow={t("step5")} title={t("revisionTitle")} lead={t("revisionLead")} />
         <div className="revision-tabs" role="tablist" aria-label={t("revisionTitle")}><button role="tab" aria-selected={revisionTab === "original"} className={revisionTab === "original" ? "active" : ""} onClick={() => setRevisionTab("original")}>{t("originalDraft")}</button><button role="tab" aria-selected={revisionTab === "revised"} className={revisionTab === "revised" ? "active" : ""} onClick={() => setRevisionTab("revised")}>{t("revisedDraft")}</button></div>
-        <section className={`revision-grid tab-${revisionTab}`}><div className="version-card original"><span>{t("originalDraft")}</span><p className="diff-text">{diff.original.map((part, index) => part.kind === "removed" ? <mark className="diff-removed" key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>)}</p></div><div className="version-card revised"><div className="version-label"><span>{t("revisedDraft")}</span>{guided && <button onClick={() => setRevised(guidedDemo[language].revision)}>{t("useDemoRevision")}</button>}</div><p className="diff-text revised-preview" aria-hidden="true">{diff.revised.map((part, index) => part.kind === "same" ? <span key={index}>{part.text}</span> : <mark className={part.kind === "pending" ? "diff-pending" : "diff-added"} key={index}>{part.text}</mark>)}</p><textarea value={revised} onChange={(event) => setRevised(limitCharacters(event.target.value, MAX_CHARACTERS, language))} aria-label={t("revisionLabel")} /><div className={`draft-meta ${revisedCount >= 1400 ? "near-limit" : ""}`}><span>{t("maxCharacters")}</span><strong aria-live="polite">{formatNumber(language, revisedCount)} / {formatNumber(language, MAX_CHARACTERS)} {t("characters")}</strong></div></div></section>
+        <section className={`revision-grid tab-${revisionTab}`}><div className="version-card original"><span>{t("originalDraft")}</span><p className="diff-text">{diff.original.map((part, index) => part.kind === "removed" ? <mark className="diff-removed" key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>)}</p></div><div className="version-card revised"><div className="version-label"><span>{t("revisedDraft")}</span>{guided && <button onClick={() => { setRevised(guidedDemo[language].revision); setRevisionOrigin("guided"); }}>{t("useDemoRevision")}</button>}</div><p className="diff-text revised-preview" aria-hidden="true">{diff.revised.map((part, index) => part.kind === "same" ? <span key={index}>{part.text}</span> : <mark className={part.kind === "pending" ? "diff-pending" : "diff-added"} key={index}>{part.text}</mark>)}</p><textarea value={revised} onChange={(event) => { setRevised(event.target.value); setRevisionOrigin("manual"); }} aria-label={t("revisionLabel")} /><div className={`draft-meta ${revisedCount >= 1400 ? "near-limit" : ""}`}><span>{t("maxCharacters")}</span><strong aria-live="polite">{t("characterCounter", { count: formatNumber(language, revisedCount), maximum: formatNumber(language, MAX_CHARACTERS) })}</strong><small>{t("characterCountingHelp")}</small>{revisedExcess > 0 && <p className="field-error" role="alert">{t("charactersOverLimit", { count: formatNumber(language, revisedExcess) })}</p>}</div></div></section>
         <div className="traceability-note"><span>↗</span><p>{t("traceability")} <a href={source.url} target="_blank" rel="noreferrer">{t("openSupportingSource")}</a></p></div><div className="diff-legend"><span><i className="removed" />{t("removedLegend")}</span><span><i className="added" />{t("addedLegend")}</span><span><i className="pending" />{t("pendingLegend")}</span></div>
         <section className="reflection-card"><label>{t("whatChanged")}</label><div>{reflectionOptions.map((item) => <button type="button" key={item.id} className={reflection === item.id ? "selected" : ""} onClick={() => setReflection(item.id)} aria-pressed={reflection === item.id}>{reflection === item.id ? "✓ " : ""}{item.label}</button>)}</div></section>
         <Actions back={() => setStep(4)} language={language}><button className="primary-button" disabled={!revised.trim() || !reflection || revisedCount > MAX_CHARACTERS} onClick={() => setStep(6)}>{t("createReceipt")}<span>→</span></button></Actions>

@@ -291,7 +291,7 @@ export async function POST(request: Request) {
   if (typeof draft !== "string" || !draft.trim() || !isLanguage(language)) {
     return errorResponse("INVALID_REQUEST", "A draft and supported language are required.", 400);
   }
-  if (countCharacters(draft, language) > MAX_DRAFT_CHARACTERS) {
+  if (countCharacters(draft) > MAX_DRAFT_CHARACTERS) {
     return errorResponse("INVALID_REQUEST", "The draft exceeds 1,500 characters.", 400);
   }
 

@@ -124,8 +124,10 @@ mark { padding: 2px 0; color: inherit; background: linear-gradient(transparent 4
 .draft-card label { display: block; margin-bottom: 12px; color: #7d869a; font-size: 9px; font-weight: 800; letter-spacing: .15em; }
 .draft-card textarea { resize: vertical; width: 100%; min-height: 260px; border: 0; outline: none; color: #26324b; background: transparent; font-family: Georgia, serif; font-size: 19px; line-height: 1.7; }
 .draft-card textarea::placeholder { color: #b5bccb; }
-.draft-meta { border-top: 1px solid #edf0f5; padding-top: 13px; display: flex; justify-content: space-between; color: #939bab; font-size: 10px; }
-.draft-meta strong { color: #697287; }
+.draft-meta { border-top: 1px solid #edf0f5; padding-top: 13px; display: grid; grid-template-columns: 1fr auto; gap: 5px 16px; color: #939bab; font-size: 10px; }
+.draft-meta strong { color: #697287; text-align: right; }
+.draft-meta small { grid-column: 1 / -1; color: #8c95a8; line-height: 1.45; }
+.draft-meta .field-error { grid-column: 1 / -1; margin: 2px 0 0; font-weight: 750; }
 .draft-meta.near-limit strong { color: #b45309; }
 .next-card { padding: 25px; }
 .orbit-icon { width: 37px; height: 37px; display: grid; place-items: center; background: var(--soft-indigo); color: var(--indigo); border-radius: 12px; font-weight: 800; }
@@ -149,6 +151,8 @@ mark { padding: 2px 0; color: inherit; background: linear-gradient(transparent 4
 .translation-notice { width: min(1050px, calc(100% - 48px)); margin: 18px auto 0; padding: 14px 17px; display: flex; gap: 11px; align-items: center; border: 1px solid #d8d5ff; border-radius: 13px; background: #f7f6ff; color: #55509d; }
 .translation-notice > span { flex: 0 0 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--indigo); color: white; font-size: 10px; font-weight: 850; }
 .translation-notice p { margin: 0; font-size: 10px; line-height: 1.55; }
+.translation-notice.global { margin-bottom: 18px; }
+.translation-notice button { margin-left: auto; min-height: 40px; padding: 0 13px; border: 1px solid #c8c3ff; border-radius: 9px; background: white; color: var(--indigo); font-size: 10px; font-weight: 800; }
 .narration-status { width: min(1100px, calc(100% - 48px)); margin: -10px auto 18px; color: #8b5d2e; font-size: 10px; line-height: 1.5; }
 .narration-status.compact { width: auto; margin: 8px 0 0; }
 

@@ -1,4 +1,5 @@
 import type { Language, ResearchSource } from "./analysis";
+import { translate, type TranslationKey } from "./i18n";
 
 export type ReceiptData = {
   language: Language;
@@ -13,57 +14,40 @@ export type ReceiptData = {
   createdAt: Date;
 };
 
-const labels = {
-  pt: {
-    title: "Resumo da publicação",
-    subtitle: "Registro de verificação pré-publicação",
-    claim: "Afirmação examinada",
-    source: "Fonte consultada",
-    author: "Autor ou instituição",
-    date: "Data de publicação",
-    type: "Tipo de fonte",
-    url: "URL",
-    accessed: "Data de acesso",
-    measured: "O que a fonte mediu ou informou",
-    limitation: "O que a fonte não permite concluir",
-    support: "Relação escolhida",
-    justification: "Justificativa",
-    decision: "Decisão editorial",
-    original: "Trecho original",
-    revised: "Trecho revisado",
-    reflection: "Reflexão final",
-    reviewedAt: "Data da revisão",
-    disclaimer: "Este resumo documenta o processo de verificação realizado pelo criador. Ele não certifica que o conteúdo seja verdadeiro.",
-  },
-  en: {
-    title: "Publication summary",
-    subtitle: "Pre-publication verification record",
-    claim: "Claim examined",
-    source: "Source consulted",
-    author: "Author or institution",
-    date: "Publication date",
-    type: "Source type",
-    url: "URL",
-    accessed: "Access date",
-    measured: "What the source measured or reported",
-    limitation: "What the source does not establish",
-    support: "Selected relationship",
-    justification: "Justification",
-    decision: "Editorial decision",
-    original: "Original passage",
-    revised: "Revised passage",
-    reflection: "Final reflection",
-    reviewedAt: "Review date",
-    disclaimer: "This summary documents the verification process performed by the creator. It does not certify that the content is true.",
-  },
-} as const;
+const receiptKeys = {
+  title: "receiptTitle",
+  subtitle: "receiptSubtitle",
+  claim: "receiptFieldClaim",
+  source: "receiptFieldSource",
+  author: "receiptFieldAuthor",
+  date: "receiptFieldDate",
+  type: "receiptFieldType",
+  url: "receiptFieldUrl",
+  accessed: "receiptFieldAccessed",
+  measured: "receiptFieldMeasured",
+  limitation: "receiptFieldLimitation",
+  support: "receiptFieldSupport",
+  justification: "receiptFieldJustification",
+  decision: "receiptFieldDecision",
+  original: "receiptFieldOriginal",
+  revised: "receiptFieldRevised",
+  reflection: "receiptFieldReflection",
+  reviewedAt: "receiptFieldReviewedAt",
+  disclaimer: "receiptDisclaimer",
+} as const satisfies Record<string, TranslationKey>;
+
+function receiptLabels(language: Language) {
+  return Object.fromEntries(
+    Object.entries(receiptKeys).map(([name, key]) => [name, translate(language, key)]),
+  ) as Record<keyof typeof receiptKeys, string>;
+}
 
 function locale(language: Language) {
   return language === "pt" ? "pt-BR" : "en-US";
 }
 
 export function buildReceiptSummary(data: ReceiptData) {
-  const l = labels[data.language];
+  const l = receiptLabels(data.language);
   const date = new Intl.DateTimeFormat(locale(data.language), { dateStyle: "medium", timeStyle: "short" }).format(data.createdAt);
   return [
     l.title,
@@ -114,6 +98,7 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, maximumWidth: nu
 }
 
 export async function downloadReceiptPng(data: ReceiptData) {
+  const l = receiptLabels(data.language);
   const width = 1400;
   const horizontalPadding = 96;
   const maximumWidth = width - horizontalPadding * 2;
@@ -134,10 +119,10 @@ export async function downloadReceiptPng(data: ReceiptData) {
   ctx.fillRect(0, 0, width, 20);
   ctx.fillStyle = "#101e3b";
   ctx.font = "700 62px Arial, sans-serif";
-  ctx.fillText(labels[data.language].title, horizontalPadding, 115);
+  ctx.fillText(l.title, horizontalPadding, 115);
   ctx.fillStyle = "#667085";
   ctx.font = "28px Arial, sans-serif";
-  ctx.fillText(labels[data.language].subtitle, horizontalPadding, 165);
+  ctx.fillText(l.subtitle, horizontalPadding, 165);
 
   ctx.font = "30px Arial, sans-serif";
   let y = 245;
@@ -174,7 +159,7 @@ export async function downloadReceiptPng(data: ReceiptData) {
   ctx.fillRect(72, boxY, width - 144, 130);
   ctx.fillStyle = "#ffffff";
   ctx.font = "700 25px Arial, sans-serif";
-  const disclaimerLines = wrapLines(ctx, labels[data.language].disclaimer, width - 240);
+  const disclaimerLines = wrapLines(ctx, l.disclaimer, width - 240);
   disclaimerLines.forEach((line, index) => ctx.fillText(line, 112, boxY + 50 + index * 34));
 
   const blob = await new Promise<Blob>((resolve, reject) => {
@@ -190,4 +175,3 @@ export async function downloadReceiptPng(data: ReceiptData) {
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
-

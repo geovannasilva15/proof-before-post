@@ -10,15 +10,23 @@ const [page, route, analysis, i18n, narrator, receiptSource, revisionSource, dem
   read("../lib/revision.ts"), read("../data/guided-demo.json"),
 ]);
 
-async function importTypeScript(source) {
-  const output = ts.transpileModule(source, {
+function transpileTypeScript(source) {
+  return ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
   }).outputText;
+}
+
+async function importTypeScript(source, replacements = {}) {
+  let output = transpileTypeScript(source);
+  for (const [specifier, replacement] of Object.entries(replacements)) {
+    output = output.replaceAll(`"${specifier}"`, `"${replacement}"`);
+  }
   return import(`data:text/javascript;base64,${Buffer.from(output).toString("base64")}`);
 }
 
 const revision = await importTypeScript(revisionSource);
-const receipt = await importTypeScript(receiptSource);
+const i18nModuleUrl = `data:text/javascript;base64,${Buffer.from(transpileTypeScript(i18n)).toString("base64")}`;
+const receipt = await importTypeScript(receiptSource, { "./i18n": i18nModuleUrl });
 const demo = JSON.parse(demoText);
 
 const claim = {
@@ -104,12 +112,29 @@ test("preserves a manual revision when navigating back without changing the acti
   assert.doesNotMatch(page, /setRevised\(draft\)/);
 });
 
+test("preserves manual content when the interface language changes", () => {
+  assert.match(page, /revisionOrigin === "manual"/);
+  assert.match(page, /sourceEditedFields/);
+  assert.match(page, /\[field\]: source\[field\]/);
+  assert.match(page, /O texto do usuário e o conteúdo da pesquisa permanecem no idioma original|interfaceTranslated/);
+});
+
+test("shows the real count and blocks over-limit drafts instead of silently truncating", () => {
+  assert.match(page, /setDraft\(value\)/);
+  assert.match(page, /draftExcess > 0/);
+  assert.match(page, /charactersOverLimit/);
+  assert.doesNotMatch(page, /setDraft\(limitCharacters/);
+});
+
 test("centralizes Portuguese and English interface copy", () => {
   assert.match(i18n, /const pt =/);
   assert.match(i18n, /const en: Record<keyof typeof pt, string>/);
   assert.match(page, /translate\(language/);
   assert.match(i18n, /Baixar resumo da publicação/);
   assert.match(i18n, /Download publication summary/);
+  assert.match(receiptSource, /import \{ translate/);
+  assert.doesNotMatch(receiptSource, /Resumo da publicação/);
+  assert.doesNotMatch(receiptSource, /Publication summary/);
 });
 
 test("supports play, pause, resume and stop narration in both locales", () => {
@@ -147,6 +172,5 @@ test("copies the summary with a fallback when Clipboard API is unavailable", () 
 test("keeps the key ethical disclaimer in both languages", () => {
   assert.match(i18n, /Ele não certifica que o conteúdo seja verdadeiro/);
   assert.match(i18n, /It does not certify that the content is true/);
-  assert.match(receiptSource, /Ele não certifica que o conteúdo seja verdadeiro/);
-  assert.match(receiptSource, /It does not certify that the content is true/);
+  assert.match(receiptSource, /receiptDisclaimer/);
 });
