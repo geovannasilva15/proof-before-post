@@ -1,0 +1,91 @@
+{
+  "sourceUrl": "https://www.unesco.org/en/articles/2/3-digital-content-creators-do-not-check-their-facts-sharing-want-learn-how-do-so-unesco-survey",
+  "source": {
+    "id": "unesco-press-release-2024",
+    "title": "2/3 of digital content creators do not check their facts before sharing, but want to learn how to do so (UNESCO survey)",
+    "authorOrInstitution": "UNESCO",
+    "publishedAt": "2024-11-26",
+    "sourceType": {
+      "pt": "Comunicado oficial que resume uma pesquisa global",
+      "en": "Official press release summarizing a global survey"
+    },
+    "measuredOrReported": {
+      "pt": "A pesquisa analisou motivações, práticas e desafios de 500 criadores de conteúdo digital em 45 países. Entre os entrevistados, 62% disseram não realizar verificação rigorosa e sistemática antes de compartilhar informações.",
+      "en": "The survey examined the motivations, practices and challenges of 500 digital content creators in 45 countries. Among respondents, 62% reported not carrying out rigorous and systematic fact-checking before sharing information."
+    },
+    "doesNotEstablish": {
+      "pt": "A pesquisa não mediu a quantidade de desinformação publicada, não concluiu que os criadores divulgam desinformação intencionalmente e não comparou a confiabilidade deles com a de jornalistas.",
+      "en": "The survey did not measure how much misinformation creators published, did not conclude that creators intentionally spread misinformation and did not compare their reliability with journalists."
+    },
+    "contextLimitations": {
+      "pt": "Os resultados descrevem as respostas e práticas declaradas pelos participantes da pesquisa. Eles não devem ser ampliados para conclusões que o estudo não investigou.",
+      "en": "The results describe the survey participants' reported practices and responses. They should not be extended to conclusions that the study did not investigate."
+    },
+    "relationSummary": {
+      "pt": "A fonte sustenta uma conclusão sobre práticas declaradas de verificação, mas não sustenta a afirmação de que a maioria dos criadores espalha desinformação.",
+      "en": "The source supports a conclusion about reported fact-checking practices, but it does not support the claim that most creators spread misinformation."
+    }
+  },
+  "pt": {
+    "draft": "A UNESCO provou que a maioria dos criadores digitais espalha desinformação. Segundo a pesquisa, 62% nunca verificam os fatos. Criadores são menos confiáveis que jornalistas.",
+    "researchSummary": "Demonstração guiada baseada em um comunicado oficial da UNESCO, publicado em 26 de novembro de 2024, sobre uma pesquisa com 500 criadores de conteúdo digital de 45 países.",
+    "revision": "Em uma pesquisa da UNESCO com 500 criadores de conteúdo digital de 45 países, 62% informaram que não realizavam uma verificação rigorosa e sistemática antes de compartilhar informações. O resultado aponta uma necessidade de capacitação, mas não mede quanto conteúdo falso foi publicado nem compara a confiabilidade dos criadores com a de jornalistas.",
+    "claims": [
+      {
+        "id": "claim-1",
+        "text": "A UNESCO provou que a maioria dos criadores digitais espalha desinformação.",
+        "category": "Conclusão sem apoio",
+        "reason": "A pesquisa mediu práticas declaradas de verificação, não a quantidade de desinformação divulgada.",
+        "question": "O que a pesquisa da UNESCO realmente mediu?",
+        "tone": "amber"
+      },
+      {
+        "id": "claim-2",
+        "text": "62% nunca verificam os fatos.",
+        "category": "Estatística distorcida",
+        "reason": "A fonte diz que 62% não faziam verificação rigorosa e sistemática. Ela não afirma que essas pessoas nunca verificavam nada.",
+        "question": "A palavra “nunca” corresponde ao que a fonte informou?",
+        "tone": "violet"
+      },
+      {
+        "id": "claim-3",
+        "text": "Criadores são menos confiáveis que jornalistas.",
+        "category": "Comparação sem apoio",
+        "reason": "A pesquisa não comparou a confiabilidade de criadores e jornalistas.",
+        "question": "Qual evidência permitiria fazer essa comparação?",
+        "tone": "teal"
+      }
+    ]
+  },
+  "en": {
+    "draft": "UNESCO proved that most digital creators spread misinformation. According to the survey, 62% never verify facts. Creators are less reliable than journalists.",
+    "researchSummary": "Guided demonstration based on an official UNESCO press release published on 26 November 2024 about a survey of 500 digital content creators in 45 countries.",
+    "revision": "In a UNESCO survey of 500 digital content creators from 45 countries, 62% reported that they did not conduct rigorous and systematic fact-checking before sharing information. The result points to a training need, but it does not measure how much false content was published or compare creators' reliability with journalists.",
+    "claims": [
+      {
+        "id": "claim-1",
+        "text": "UNESCO proved that most digital creators spread misinformation.",
+        "category": "Unsupported conclusion",
+        "reason": "The survey measured reported fact-checking practices, not how much misinformation creators published.",
+        "question": "What did the UNESCO survey actually measure?",
+        "tone": "amber"
+      },
+      {
+        "id": "claim-2",
+        "text": "62% never verify facts.",
+        "category": "Misrepresented statistic",
+        "reason": "The source says that 62% did not carry out rigorous and systematic fact-checking. It does not say that they never checked anything.",
+        "question": "Does the word “never” match what the source reported?",
+        "tone": "violet"
+      },
+      {
+        "id": "claim-3",
+        "text": "Creators are less reliable than journalists.",
+        "category": "Unsupported comparison",
+        "reason": "The survey did not compare the reliability of creators and journalists.",
+        "question": "What evidence would be needed to make that comparison?",
+        "tone": "teal"
+      }
+    ]
+  }
+}

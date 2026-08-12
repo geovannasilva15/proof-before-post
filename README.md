@@ -16,9 +16,9 @@ Source: [UNESCO — 2/3 of digital content creators do not check their facts bef
 
 1. Paste a caption, script or post.
 2. Select one claim that deserves attention.
-3. Examine the source, its scope and its context.
-4. Decide whether to correct, contextualize, remove, keep transparently or seek stronger evidence.
-5. Revise the draft and generate an Evidence Receipt.
+3. Confirm or correct the source title, institution, date, type, scope and limitations.
+4. Record a human evidence assessment and editorial decision.
+5. Revise only the examined passage and generate a publication summary.
 
 The Evidence Receipt documents the creator's verification process. It does **not** certify that the content is true.
 
@@ -29,11 +29,13 @@ The Evidence Receipt documents the creator's verification process. It does **not
 - Free-draft review with up to three evidence-sensitive claims.
 - Portuguese and English interface.
 - Complete localized flow, including demo content, accessibility labels and receipt export.
-- Human-controlled evidence assessment and editorial decision.
-- Original-versus-revised draft comparison.
-- Evidence Receipt download as PNG.
-- Copyable receipt summary.
-- Language-aware browser narration for questions and research context, with clear feedback when the selected voice is unavailable.
+- Editable source metadata with clear research, demo and user-edited provenance.
+- Human-controlled evidence assessment with a required justification.
+- Five editorial actions that produce distinct, editable draft revisions.
+- Original-versus-revised comparison with removed, added and unresolved highlights.
+- Source-to-revision traceability.
+- Complete publication summary download as PNG and copyable text fallback.
+- Language-aware browser narration with play, pause, resume and stop controls.
 - Unicode-aware 1,500-character counting, including emoji and combined characters.
 - Responsive layout, keyboard navigation and reduced-motion support.
 - No account or database required for visitors.
@@ -79,7 +81,7 @@ Open [http://localhost:3000](http://localhost:3000).
 npm run check
 ```
 
-This command runs TypeScript validation, product guardrail tests and a production build.
+This command runs ESLint, TypeScript validation, 18 product and behavior tests, and a production build.
 
 ## Deploy on Vercel
 
@@ -101,15 +103,22 @@ proof-before-post/
 │   ├── globals.css
 │   ├── layout.tsx
 │   └── page.tsx
+├── data/
+│   └── guided-demo.json
 ├── hooks/
 │   └── useNarrator.ts
 ├── lib/
 │   ├── analysis.ts
+│   ├── i18n.ts
+│   ├── receipt.ts
+│   ├── revision.ts
 │   └── text.ts
 ├── public/
 │   └── favicon.svg
 ├── tests/
-│   └── product-guardrails.test.mjs
+│   ├── product-guardrails.test.mjs
+│   └── unicode-character-count.test.mjs
+├── eslint.config.mjs
 ├── LICENSE
 ├── next.config.ts
 ├── package.json

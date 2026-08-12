@@ -6,10 +6,15 @@ export type ResearchSource = {
   id: string;
   title: string;
   url: string;
-  publisher: string;
+  authorOrInstitution: string;
   publishedAt: string;
-  excerpt: string;
-  relevance: string;
+  sourceType: string;
+  measuredOrReported: string;
+  doesNotEstablish: string;
+  contextLimitations: string;
+  relationSummary: string;
+  accessedAt: string;
+  provenance: "research" | "user" | "demo";
 };
 
 export type Claim = {
@@ -90,10 +95,15 @@ export function validateAnalysisResult(value: unknown): value is AnalysisResult 
       typeof source.id !== "string" ||
       typeof source.title !== "string" ||
       !isHttpsUrl(source.url) ||
-      typeof source.publisher !== "string" ||
+      typeof source.authorOrInstitution !== "string" ||
       typeof source.publishedAt !== "string" ||
-      typeof source.excerpt !== "string" ||
-      typeof source.relevance !== "string"
+      typeof source.sourceType !== "string" ||
+      typeof source.measuredOrReported !== "string" ||
+      typeof source.doesNotEstablish !== "string" ||
+      typeof source.contextLimitations !== "string" ||
+      typeof source.relationSummary !== "string" ||
+      typeof source.accessedAt !== "string" ||
+      !["research", "user", "demo"].includes(source.provenance)
     ) return false;
     sourceIds.add(source.id);
   }
