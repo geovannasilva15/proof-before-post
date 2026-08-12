@@ -12,7 +12,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:3000",
     browserName: "chromium",
-    launchOptions: executablePath ? { executablePath, args: ["--no-sandbox", "--single-process", "--no-zygote", "--disable-dev-shm-usage"] } : undefined,
+    launchOptions: executablePath ? { executablePath, args: ["--no-sandbox", "--disable-dev-shm-usage"] } : undefined,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },

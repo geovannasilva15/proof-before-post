@@ -134,6 +134,9 @@ test("URL extraction blocks SSRF targets and uses bounded server-side fetching",
   assert.match(extractRoute, /hostname === "localhost"/);
   assert.match(extractRoute, /redirect: "manual"/);
   assert.match(extractRoute, /MAX_RESPONSE_BYTES/);
+  assert.match(extractRoute, /response\.body\.getReader\(\)/);
+  assert.match(extractRoute, /reader\.cancel\(\)/);
+  assert.doesNotMatch(extractRoute, /response\.arrayBuffer\(\)/);
   assert.match(extractRoute, /AbortController/);
 });
 
@@ -189,6 +192,17 @@ test("centralizes Portuguese and English interface copy", () => {
   assert.match(receiptSource, /import \{ translate/);
   assert.doesNotMatch(receiptSource, /Resumo da publicação/);
   assert.doesNotMatch(receiptSource, /Publication summary/);
+  assert.doesNotMatch(receiptSource, /associação quebrada|broken association|Nenhuma referência por trecho|No passage-level references/);
+  assert.equal(receipt.localizedStatus("pt", "completed_with_pending"), "Concluída com pendência assumida");
+  assert.equal(receipt.localizedStatus("en", "completed"), "Completed");
+  assert.match(page, /localizedStatus\(language, sessionStatus\)/);
+});
+
+test("shows when imported content was truncated before confirmation", () => {
+  assert.match(page, /setExtractionTruncated\(Boolean\(result\.truncated\)\)/);
+  assert.match(page, /extractionTruncated &&/);
+  assert.match(i18n, /A prévia foi limitada/);
+  assert.match(i18n, /The preview was limited/);
 });
 
 test("supports play, pause, resume and stop narration in both locales", () => {

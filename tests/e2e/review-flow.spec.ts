@@ -19,6 +19,18 @@ async function completeGuidedReview(page: Page, language: "pt" | "en") {
   for (let index = 0; index < 7; index += 1) await checklist.nth(index).check();
   await page.getByRole("button", { name: language === "pt" ? /Criar meu resumo da publicação/ : /Create my publication summary/ }).click();
   await expect(page.locator("#receipt")).toBeVisible();
+  await expect(page.locator("#receipt")).toContainText(language === "pt" ? "Concluída" : "Completed");
+  await expect(page.locator("#receipt")).not.toContainText("completed_with_pending");
+}
+
+async function reachEditorialDecision(page: Page) {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Testar o exemplo guiado" }).click();
+  await page.getByRole("button", { name: /Analisar demonstração/ }).click();
+  await page.getByRole("button", { name: /Examinar esta afirmação/ }).click();
+  await page.getByRole("button", { name: "Não sustenta", exact: true }).click();
+  await page.getByLabel("JUSTIFICATIVA DA SUA ESCOLHA").fill("A fonte não mediu a divulgação de desinformação.");
+  await page.getByRole("button", { name: /Continuar para a decisão/ }).click();
 }
 
 test("desktop, mobile, PT/EN, Unicode, history, security and exports", async ({ page, context }, testInfo) => {
@@ -65,4 +77,40 @@ test("desktop, mobile, PT/EN, Unicode, history, security and exports", async ({ 
   await page.getByLabel("Your draft").fill("A verifiable claim about a public fact.");
   await page.getByRole("button", { name: /Research and find claims/ }).click();
   await expect(page.locator(".analysis-error")).toContainText("OPENAI_API_KEY");
+});
+
+test("all five editorial actions change only the selected claim", async ({ page }) => {
+  await reachEditorialDecision(page);
+  const cases = [
+    { action: /Corrigir a afirmação/, expected: /A pesquisa analisou|500 criadores/, absent: /UNESCO provou/ },
+    { action: /Adicionar contexto/, expected: /A pesquisa não mediu/, absent: null },
+    { action: /Remover a afirmação/, expected: /Segundo a pesquisa/, absent: /UNESCO provou/ },
+    { action: /Manter com transparência/, expected: /Limitação da evidência/, absent: null },
+    { action: /Procurar evidência melhor/, expected: /PENDENTE DE EVIDÊNCIA/, absent: null },
+  ];
+  for (const item of cases) {
+    await page.getByRole("button", { name: item.action }).click();
+    await page.getByRole("button", { name: /Revisar o conteúdo/ }).click();
+    const revised = page.getByLabel("Versão revisada");
+    await expect(revised).toHaveValue(item.expected);
+    await expect(revised).toHaveValue(/Segundo a pesquisa|Criadores são menos confiáveis|PENDENTE DE EVIDÊNCIA/);
+    if (item.absent) await expect(revised).not.toHaveValue(item.absent);
+    await page.getByRole("button", { name: "Voltar", exact: false }).click();
+  }
+});
+
+test("research timeout and invalid response stay transparent", async ({ page }) => {
+  for (const mocked of [
+    { code: "TIMEOUT", status: 504, message: /demorou mais que o limite/ },
+    { code: "INVALID_RESPONSE", status: 502, message: /dados incompletos ou inválidos/ },
+  ]) {
+    await page.route("**/api/analyze", async (route) => route.fulfill({ status: mocked.status, contentType: "application/json", body: JSON.stringify({ code: mocked.code }) }));
+    await page.goto("/");
+    await page.getByRole("button", { name: "Revisar meu rascunho" }).click();
+    await page.getByLabel("Seu rascunho").fill("Uma afirmação pública verificável com um número de 42%.");
+    await page.getByRole("button", { name: /Pesquisar e encontrar afirmações/ }).click();
+    await expect(page.locator(".analysis-error")).toContainText(mocked.message);
+    await expect(page.locator(".analysis-error")).toContainText("A pesquisa não foi concluída");
+    await page.unroute("**/api/analyze");
+  }
 });

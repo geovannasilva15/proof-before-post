@@ -62,8 +62,23 @@ async function fetchPublicPage(initialUrl: URL) {
       if (!contentType.includes("text/html") && !contentType.includes("text/plain")) throw new Error("UNSUPPORTED_CONTENT");
       const declaredLength = Number(response.headers.get("content-length") || 0);
       if (declaredLength > MAX_RESPONSE_BYTES) throw new Error("CONTENT_TOO_LARGE");
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.byteLength > MAX_RESPONSE_BYTES) throw new Error("CONTENT_TOO_LARGE");
+      if (!response.body) throw new Error("FETCH_ERROR");
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.byteLength;
+        if (received > MAX_RESPONSE_BYTES) {
+          await reader.cancel();
+          throw new Error("CONTENT_TOO_LARGE");
+        }
+        chunks.push(value);
+      }
+      const bytes = new Uint8Array(received);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
       return { body: new TextDecoder("utf-8", { fatal: false }).decode(bytes), url: current.toString(), contentType };
     } finally {
       clearTimeout(timeout);

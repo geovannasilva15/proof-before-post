@@ -67,6 +67,10 @@ function statusText(language: Language, status: SessionStatus | undefined) {
   return translate(language, status === "completed" ? "statusCompleted" : status === "completed_with_pending" ? "statusPending" : "statusInProgress");
 }
 
+export function localizedStatus(language: Language, status: SessionStatus) {
+  return statusText(language, status);
+}
+
 function checklistText(language: Language, checklist: string[] | undefined) {
   const keys: Record<string, TranslationKey> = { opened: "checklistOpenedSource", identity: "checklistIdentity", date: "checklistDate", method: "checklistMethod", limitation: "checklistLimitation", scope: "checklistScope", final: "checklistFinalText" };
   return (checklist ?? []).map((item) => keys[item] ? translate(language, keys[item]) : item).join("; ");
@@ -100,12 +104,10 @@ export function buildReceiptSummary(data: ReceiptData) {
   ]);
   const citationLines = citations.length ? citations.map((citation, index) => {
     const source = sources.find((item) => item.id === citation.sourceId);
-    const state = citation.broken ? (data.language === "pt" ? "associação quebrada" : "broken association") : source?.title || "—";
+    const state = citation.broken ? translate(data.language, "citationAssociationBroken") : source?.title || "—";
     return `${index + 1}. “${citation.citedText}” — ${state}${citation.note ? ` (${citation.note})` : ""}`;
-  }) : [data.language === "pt" ? "Nenhuma referência por trecho." : "No passage-level references."];
-  const pendingText = data.pending
-    ? (data.language === "pt" ? "Há evidência pendente, registrada com transparência." : "Evidence remains pending and is recorded transparently.")
-    : (data.language === "pt" ? "Nenhuma pendência registrada." : "No pending item recorded.");
+  }) : [translate(data.language, "noPassageReferences")];
+  const pendingText = translate(data.language, data.pending ? "pendingRecorded" : "noPendingRecorded");
   return [
     l.title,
     l.subtitle,
@@ -285,11 +287,11 @@ export async function downloadReceiptPdf(data: ReceiptData) {
   field(l.decision, data.decision);
   field(l.original, data.originalDraft);
   field(l.revised, data.revisedDraft);
-  if (data.translatedDraft) field(data.language === "pt" ? "Cópia traduzida" : "Translated copy", data.translatedDraft);
+  if (data.translatedDraft) field(translate(data.language, "receiptTranslatedCopy"), data.translatedDraft);
   field(l.reflection, data.reflection);
   for (const line of comparisonLines(data)) field(translate(data.language, "comparisonTitle"), line);
   field(l.status, statusText(data.language, data.status));
-  field(l.pending, data.pending ? (data.language === "pt" ? "Sim" : "Yes") : (data.language === "pt" ? "Não" : "No"));
+  field(l.pending, translate(data.language, data.pending ? "yes" : "no"));
   field(l.checklist, checklistText(data.language, data.checklist) || "—");
   field(l.citations, (data.citations ?? []).map((citation) => { const source = sources.find((item) => item.id === citation.sourceId); return `“${citation.citedText}” — ${source?.title || "—"}${citation.broken ? ` (${translate(data.language, "citationBroken")})` : ""}`; }).join("; ") || "—");
   field(l.reviewedAt, new Intl.DateTimeFormat(locale(data.language), { dateStyle: "medium", timeStyle: "short" }).format(data.createdAt));
