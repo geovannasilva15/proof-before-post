@@ -4,7 +4,7 @@
 
 Proof Before Post is a bilingual media and information literacy experience that helps young digital creators examine the evidence behind a draft before it reaches an audience. The product guides reflection without asking AI to issue a truth verdict.
 
-**Public demo:** deployment in progress.
+**Public site:** [proof-before-post.vercel.app](https://proof-before-post.vercel.app/)
 
 ## Why this matters
 
@@ -24,16 +24,19 @@ The Evidence Receipt documents the creator's verification process. It does **not
 
 ## Features
 
-- Guided UNESCO demonstration that works without an API.
-- Free-draft review with up to three claims.
+- Live web research with verifiable source links.
+- Guided UNESCO demonstration that remains available without the research service.
+- Free-draft review with up to three evidence-sensitive claims.
 - Portuguese and English interface.
+- Complete localized flow, including demo content, accessibility labels and receipt export.
 - Human-controlled evidence assessment and editorial decision.
 - Original-versus-revised draft comparison.
 - Evidence Receipt download as PNG.
 - Copyable receipt summary.
-- Browser text-to-speech for guiding questions.
+- Language-aware browser narration for questions and research context, with clear feedback when the selected voice is unavailable.
+- Unicode-aware 1,500-character counting, including emoji and combined characters.
 - Responsive layout, keyboard navigation and reduced-motion support.
-- No account, database or secret key required.
+- No account or database required for visitors.
 
 ## Ethical guardrails
 
@@ -54,8 +57,9 @@ Proof Before Post can organize questions and make possible evidence gaps visible
 - CSS
 - Canvas API for receipt export
 - Web Speech API for question playback
+- OpenAI Responses API with web search for live, sourced research
 
-All draft data stays in the current browser state. The repository contains no API key and requires no `.env` file.
+Drafts are not stored permanently. During live research, the current draft is sent to the server-side analysis route and the configured research service for that request. The repository never contains the API key: the credential is read only by the server route from `OPENAI_API_KEY`.
 
 ## Run locally
 
@@ -63,6 +67,7 @@ Requirements: Node.js 20.9 or newer and npm.
 
 ```bash
 npm install
+npm run check
 npm run dev
 ```
 
@@ -80,8 +85,11 @@ This command runs TypeScript validation, product guardrail tests and a productio
 
 1. Import this repository into Vercel.
 2. Keep the detected framework as **Next.js**.
-3. Leave environment variables empty.
-4. Select **Deploy**.
+3. Add `OPENAI_API_KEY` as a server-side environment variable.
+4. Optionally set `OPENAI_MODEL`; the default is `gpt-5.5`.
+5. Select **Deploy**.
+
+Do not prefix the key with `NEXT_PUBLIC_`. A `NEXT_PUBLIC_` variable would expose the value to visitors' browsers.
 
 ## Project structure
 
@@ -89,9 +97,15 @@ This command runs TypeScript validation, product guardrail tests and a productio
 proof-before-post/
 ├── .github/workflows/ci.yml
 ├── app/
+│   ├── api/analyze/route.ts
 │   ├── globals.css
 │   ├── layout.tsx
 │   └── page.tsx
+├── hooks/
+│   └── useNarrator.ts
+├── lib/
+│   ├── analysis.ts
+│   └── text.ts
 ├── public/
 │   └── favicon.svg
 ├── tests/
@@ -102,9 +116,11 @@ proof-before-post/
 └── tsconfig.json
 ```
 
-## Current MVP limits
+## Research behavior
 
-The free-draft flow uses transparent, local sentence-based prompts instead of claiming automated fact verification. The guided demonstration uses a controlled UNESCO scenario. A future model integration should use structured outputs and preserve the same human-decision guardrails.
+The live flow performs web research on the server, requests structured output, and cross-checks every displayed URL against sources returned by the web-search tool. If the research service is missing, times out, or returns no verified sources, the interface shows an explicit error instead of substituting a local or simulated analysis.
+
+The guided UNESCO scenario is clearly labeled as prepared demonstration content. Neither mode certifies that a draft is true.
 
 ## Portuguese summary
 

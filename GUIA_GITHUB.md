@@ -1,6 +1,6 @@
 # Guia rápido para publicar no GitHub
 
-O projeto já está pronto e não contém chaves secretas. Você não precisa criar nem editar um arquivo `.env`.
+O projeto não contém chaves secretas. A pesquisa ao vivo usa a variável `OPENAI_API_KEY`, que deve ser cadastrada apenas na Vercel e nunca enviada ao GitHub.
 
 ## Opção mais simples: GitHub Desktop
 
@@ -48,8 +48,12 @@ Depois, abra `http://localhost:3000` no navegador.
 2. Clique em **Add New > Project**.
 3. Selecione o repositório `proof-before-post`.
 4. Confirme o framework **Next.js**.
-5. Não adicione variáveis de ambiente.
-6. Clique em **Deploy**.
+5. Em **Environment Variables**, adicione `OPENAI_API_KEY` e cole a chave diretamente na Vercel.
+6. Mantenha a variável disponível para **Production**, **Preview** e **Development**.
+7. Não use o prefixo `NEXT_PUBLIC_`, pois ele deixaria a chave visível no navegador.
+8. Clique em **Deploy**.
+
+O modelo pode ser alterado pela variável opcional `OPENAI_MODEL`. Sem essa variável, o projeto usa `gpt-5.5`.
 
 ## Depois de publicar
 
@@ -59,4 +63,7 @@ No GitHub, abra **About**, clique na engrenagem e adicione:
 - o link da aplicação publicada;
 - os tópicos: `nextjs`, `typescript`, `media-literacy`, `ai-ethics`, `unesco`, `fact-checking`, `bilingual`.
 
-Se outra integrante participou do projeto, adicione o nome e o perfil dela à seção **Author** do `README.md` antes da submissão oficial.
+A equipe já está identificada no `README.md`:
+
+- Geovanna Eduarda da Silva;
+- Matheus Barcelli Marques de Lima (Matheus Marks).
