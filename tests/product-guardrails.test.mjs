@@ -4,10 +4,10 @@ import test from "node:test";
 import ts from "typescript";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [page, route, analysis, i18n, narrator, receiptSource, revisionSource, demoText, sessionSource, extractRoute] = await Promise.all([
+const [page, route, analysis, i18n, narrator, receiptSource, revisionSource, demoText, sessionSource, extractRoute, translateRoute] = await Promise.all([
   read("../app/page.tsx"), read("../app/api/analyze/route.ts"), read("../lib/analysis.ts"),
   read("../lib/i18n.ts"), read("../hooks/useNarrator.ts"), read("../lib/receipt.ts"),
-  read("../lib/revision.ts"), read("../data/guided-demo.json"), read("../lib/session.ts"), read("../app/api/extract/route.ts"),
+  read("../lib/revision.ts"), read("../data/guided-demo.json"), read("../lib/session.ts"), read("../app/api/extract/route.ts"), read("../app/api/translate/route.ts"),
 ]);
 
 function transpileTypeScript(source) {
@@ -163,6 +163,14 @@ test("preserves manual content when the interface language changes", () => {
   assert.match(page, /sourceEditedFields/);
   assert.match(page, /\[field\]: source\[field\]/);
   assert.match(page, /O texto do usuário e o conteúdo da pesquisa permanecem no idioma original|interfaceTranslated/);
+});
+
+test("the translation UI and server route share the same typed response contract", () => {
+  assert.match(page, /JSON\.stringify\(\{ text: revised, language:/);
+  assert.match(page, /translatedText/);
+  assert.doesNotMatch(page, /targetLanguage/);
+  assert.match(translateRoute, /const \{ text, language \}/);
+  assert.match(translateRoute, /NextResponse\.json\(\{ translatedText:/);
 });
 
 test("shows the real count and blocks over-limit drafts instead of silently truncating", () => {

@@ -12,6 +12,8 @@ async function completeGuidedReview(page: Page, language: "pt" | "en") {
   await page.getByRole("button", { name: new RegExp(language === "pt" ? "Corrigir a afirmação" : "Correct the claim") }).click();
   await page.getByRole("button", { name: language === "pt" ? /Revisar o conteúdo/ : /Revise the content/ }).click();
   await page.getByRole("button", { name: language === "pt" ? "Reduzi o alcance da afirmação" : "I narrowed the scope of the claim" }).click();
+  await page.getByRole("button", { name: language === "pt" ? "Gerar versão traduzida" : "Generate translated version", exact: true }).click();
+  await expect(page.locator(".translation-card .field-error")).toContainText(language === "pt" ? "Não foi possível" : "could not");
   const checklist = page.locator(".checklist-card input[type=checkbox]");
   await expect(checklist).toHaveCount(7);
   for (let index = 0; index < 7; index += 1) await checklist.nth(index).check();

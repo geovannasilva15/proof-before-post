@@ -357,10 +357,10 @@ export default function Home() {
     if (!revised.trim() || translationState === "loading") return;
     setTranslationState("loading");
     try {
-      const response = await fetch("/api/translate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: revised, targetLanguage: language === "pt" ? "en" : "pt" }) });
-      const result = await response.json().catch(() => null) as { translation?: string } | null;
-      if (!response.ok || !result?.translation) throw new Error("translation");
-      setTranslatedDraft(result.translation); setTranslationState("idle");
+      const response = await fetch("/api/translate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: revised, language: language === "pt" ? "en" : "pt" }) });
+      const result = await response.json().catch(() => null) as { translatedText?: string } | null;
+      if (!response.ok || !result?.translatedText) throw new Error("translation");
+      setTranslatedDraft(result.translatedText); setTranslationState("idle");
     } catch { setTranslationState("error"); }
   }
 
