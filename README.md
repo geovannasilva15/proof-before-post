@@ -14,11 +14,11 @@ Source: [UNESCO — 2/3 of digital content creators do not check their facts bef
 
 ## Product flow
 
-1. Paste a caption, script or post.
+1. Paste a caption, script or post, or import a public URL after reviewing the extracted preview.
 2. Select one claim that deserves attention.
-3. Confirm or correct the source title, institution, date, type, scope and limitations.
+3. Select up to three sources and confirm or correct title, institution, date, methodology, sample, scope and limitations.
 4. Record a human evidence assessment and editorial decision.
-5. Revise only the examined passage and generate a publication summary.
+5. Revise only the examined passage, associate sources with added passages, complete the checklist and generate a publication summary.
 
 The Evidence Receipt documents the creator's verification process. It does **not** certify that the content is true.
 
@@ -34,7 +34,12 @@ The Evidence Receipt documents the creator's verification process. It does **not
 - Five editorial actions that produce distinct, editable draft revisions.
 - Original-versus-revised comparison with removed, added and unresolved highlights.
 - Source-to-revision traceability.
-- Complete publication summary download as PNG and copyable text fallback.
+- Private, browser-only review history with resume, duplicate and delete controls.
+- Structured source comparison without a truth score.
+- Safe public-URL import with SSRF, redirect, size and timeout controls.
+- Separate, editable translated copy that preserves the original text.
+- Completion checklist and explicit unresolved-evidence status.
+- Complete publication summary as selectable-text PDF, PNG and copyable text.
 - Language-aware browser narration with play, pause, resume and stop controls.
 - Unicode-aware 1,500-character counting, including emoji and combined characters.
 - Responsive layout, keyboard navigation and reduced-motion support.
@@ -57,11 +62,12 @@ Proof Before Post can organize questions and make possible evidence gaps visible
 - React 19
 - TypeScript
 - CSS
-- Canvas API for receipt export
+- Canvas API and jsPDF for receipt export
+- Playwright for browser-level regression testing
 - Web Speech API for question playback
 - OpenAI Responses API with web search for live, sourced research
 
-Drafts are not stored permanently. During live research, the current draft is sent to the server-side analysis route and the configured research service for that request. The repository never contains the API key: the credential is read only by the server route from `OPENAI_API_KEY`.
+Real review sessions are saved only in the visitor's browser so work can be resumed. The visitor can delete one session or all local data; guided demonstrations are never mixed into this history. During live research, the current draft is sent to the server-side analysis route and the configured research service for that request. The repository never contains the API key: the credential is read only by the server route from `OPENAI_API_KEY`.
 
 ## Run locally
 
@@ -70,6 +76,7 @@ Requirements: Node.js 20.9 or newer and npm.
 ```bash
 npm install
 npm run check
+npm run test:e2e
 npm run dev
 ```
 
@@ -81,7 +88,7 @@ Open [http://localhost:3000](http://localhost:3000).
 npm run check
 ```
 
-This command runs ESLint, TypeScript validation, 18 product and behavior tests, and a production build.
+`npm run check` runs ESLint, TypeScript validation, product and behavior tests, and a production build. `npm run test:e2e` builds the application and runs the Playwright browser regression suite; install a Playwright Chromium browser in a standard local or CI environment first.
 
 ## Deploy on Vercel
 
@@ -100,22 +107,27 @@ proof-before-post/
 ├── .github/workflows/ci.yml
 ├── app/
 │   ├── api/analyze/route.ts
+│   ├── api/extract/route.ts
+│   ├── api/translate/route.ts
 │   ├── globals.css
 │   ├── layout.tsx
 │   └── page.tsx
 ├── data/
 │   └── guided-demo.json
 ├── hooks/
-│   └── useNarrator.ts
+│   ├── useNarrator.ts
+│   └── useReviewHistory.ts
 ├── lib/
 │   ├── analysis.ts
 │   ├── i18n.ts
 │   ├── receipt.ts
 │   ├── revision.ts
+│   ├── session.ts
 │   └── text.ts
 ├── public/
 │   └── favicon.svg
 ├── tests/
+│   ├── e2e/review-flow.spec.ts
 │   ├── product-guardrails.test.mjs
 │   └── unicode-character-count.test.mjs
 ├── eslint.config.mjs

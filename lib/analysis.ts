@@ -9,6 +9,10 @@ export type ResearchSource = {
   authorOrInstitution: string;
   publishedAt: string;
   sourceType: string;
+  methodology: string;
+  sample: string;
+  geography: string;
+  keyFindings: string;
   measuredOrReported: string;
   doesNotEstablish: string;
   contextLimitations: string;
@@ -101,6 +105,10 @@ export function validateAnalysisResult(value: unknown): value is AnalysisResult 
       typeof source.authorOrInstitution !== "string" ||
       typeof source.publishedAt !== "string" ||
       typeof source.sourceType !== "string" ||
+      typeof source.methodology !== "string" ||
+      typeof source.sample !== "string" ||
+      typeof source.geography !== "string" ||
+      typeof source.keyFindings !== "string" ||
       typeof source.measuredOrReported !== "string" ||
       typeof source.doesNotEstablish !== "string" ||
       typeof source.contextLimitations !== "string" ||

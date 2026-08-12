@@ -9,6 +9,22 @@
       "pt": "Comunicado oficial que resume uma pesquisa global",
       "en": "Official press release summarizing a global survey"
     },
+    "methodology": {
+      "pt": "Pesquisa global baseada em respostas declaradas por criadores de conteúdo digital; o comunicado apresenta resultados agregados.",
+      "en": "Global survey based on self-reported responses from digital content creators; the release presents aggregated findings."
+    },
+    "sample": {
+      "pt": "500 criadores de conteúdo digital",
+      "en": "500 digital content creators"
+    },
+    "geography": {
+      "pt": "45 países",
+      "en": "45 countries"
+    },
+    "keyFindings": {
+      "pt": "62% dos participantes disseram não realizar verificação rigorosa e sistemática antes de compartilhar informações; 73% manifestaram interesse em receber capacitação.",
+      "en": "62% of participants reported not conducting rigorous and systematic fact-checking before sharing information; 73% expressed interest in training."
+    },
     "measuredOrReported": {
       "pt": "A pesquisa analisou motivações, práticas e desafios de 500 criadores de conteúdo digital em 45 países. Entre os entrevistados, 62% disseram não realizar verificação rigorosa e sistemática antes de compartilhar informações.",
       "en": "The survey examined the motivations, practices and challenges of 500 digital content creators in 45 countries. Among respondents, 62% reported not carrying out rigorous and systematic fact-checking before sharing information."

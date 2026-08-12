@@ -240,6 +240,58 @@ mark { padding: 2px 0; color: inherit; background: linear-gradient(transparent 4
 .narration-controls button { min-height: 40px; padding: 0 13px; border: 1px solid #dfe4ee; border-radius: 10px; background: white; color: var(--indigo); font-size: 9px; font-weight: 750; }
 .support-panel .narration-controls { margin-top: 14px; }
 
+.input-tabs { width: min(1100px, calc(100% - 48px)); margin: 0 auto 14px; display: flex; gap: 8px; }
+.input-tabs button { min-height: 44px; padding: 0 18px; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); font-size: 12px; font-weight: 750; }
+.input-tabs button.active { border-color: var(--indigo); background: var(--soft-indigo); color: var(--indigo); }
+.url-import-card, .history-panel, .comparison-panel, .citation-card, .translation-card, .checklist-card, .pending-card { width: min(1100px, calc(100% - 48px)); margin: 0 auto 20px; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: white; box-shadow: 0 10px 35px rgba(35,47,75,.04); }
+.url-import-card > label, .translation-card label { display: grid; gap: 8px; color: var(--ink); font-size: 11px; font-weight: 750; }
+.url-import-card > div:first-of-type { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+.url-import-card input, .citation-form input, .citation-form select { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+.extraction-preview { margin-top: 16px; display: grid !important; grid-template-columns: 1fr !important; gap: 10px; }
+.extraction-preview textarea, .translation-card textarea { min-height: 200px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; resize: vertical; font: inherit; }
+.extraction-preview > div { display: flex; gap: 10px; }
+.history-panel { margin-top: 10px; margin-bottom: 60px; }
+.history-panel h2, .comparison-panel h2, .citation-card h2, .checklist-card h2 { margin: 0 0 6px; font-size: 20px; }
+.history-panel p, .comparison-panel > p, .citation-card > p, .checklist-card > p, .translation-card p, .pending-card p { color: #667085; font-size: 12px; line-height: 1.55; }
+.history-list { display: grid; gap: 10px; margin: 18px 0; }
+.history-list article { display: flex; justify-content: space-between; gap: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+.history-list article > div:first-child { display: grid; gap: 5px; }
+.history-list small { color: #667085; }
+.history-list article > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+.history-list button, .primary-source, .citation-card li button { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: white; color: var(--indigo); }
+.source-result { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 6px; }
+.source-result > input { width: 20px; height: 20px; }
+.source-result > button:not(.primary-source) { min-width: 0; padding: 8px; display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; border: 0; background: transparent; text-align: left; }
+.source-result > button:not(.primary-source) strong { grid-column: 1; }
+.primary-source { font-size: 9px; }
+.comparison-panel { margin-top: 18px; }
+.comparison-table { overflow-x: auto; margin: 18px 0; }
+.comparison-table table { width: 100%; min-width: 1050px; border-collapse: collapse; font-size: 11px; }
+.comparison-table th, .comparison-table td { padding: 10px; border: 1px solid var(--line); vertical-align: top; text-align: left; }
+.comparison-table th { background: #f7f8fc; color: var(--ink); }
+.comparison-notes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.comparison-notes label { display: grid; gap: 6px; color: var(--ink); font-size: 10px; font-weight: 750; }
+.comparison-notes textarea { min-height: 80px; padding: 10px; border: 1px solid var(--line); border-radius: 9px; resize: vertical; font: inherit; }
+.citation-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+.citation-form label { display: grid; gap: 6px; font-size: 10px; font-weight: 750; }
+.citation-card ul { padding: 0; list-style: none; }
+.citation-card li { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px; border-bottom: 1px solid var(--line); font-size: 11px; }
+.citation-card li.broken { background: #fff7e7; color: #8a5a00; }
+.translation-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 14px; }
+.translation-card label, .translation-card > .field-error { grid-column: 1 / -1; }
+.checklist-card { display: grid; gap: 8px; }
+.checklist-card label, .pending-card label { min-height: 44px; display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.checklist-card input, .pending-card input { width: 20px; height: 20px; }
+.pending-card { border-color: #efc561; background: #fffaf0; }
+
+@media (max-width: 700px) {
+  .url-import-card > div:first-of-type, .comparison-notes, .citation-form, .translation-card { grid-template-columns: 1fr; }
+  .history-list article { flex-direction: column; }
+  .url-import-card, .history-panel, .comparison-panel, .citation-card, .translation-card, .checklist-card, .pending-card { width: calc(100% - 28px); padding: 16px; }
+  .input-tabs { width: calc(100% - 28px); }
+  .url-import-card input, .url-import-card textarea, .citation-card input, .citation-card select, .translation-card textarea { font-size: 16px; }
+}
+
 .decision-grid { width: min(1050px, calc(100% - 48px)); margin: 0 auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 13px; }
 .decision-grid > button { min-height: 105px; padding: 18px; display: grid; grid-template-columns: 44px 1fr 30px; align-items: center; gap: 15px; border: 1px solid var(--line); border-radius: 16px; background: white; color: var(--ink); text-align: left; box-shadow: 0 10px 35px rgba(35,47,75,.04); }
 .decision-grid > button:nth-child(5) { grid-column: 1 / -1; }

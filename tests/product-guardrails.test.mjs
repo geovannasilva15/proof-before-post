@@ -4,10 +4,10 @@ import test from "node:test";
 import ts from "typescript";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [page, route, analysis, i18n, narrator, receiptSource, revisionSource, demoText] = await Promise.all([
+const [page, route, analysis, i18n, narrator, receiptSource, revisionSource, demoText, sessionSource, extractRoute] = await Promise.all([
   read("../app/page.tsx"), read("../app/api/analyze/route.ts"), read("../lib/analysis.ts"),
   read("../lib/i18n.ts"), read("../hooks/useNarrator.ts"), read("../lib/receipt.ts"),
-  read("../lib/revision.ts"), read("../data/guided-demo.json"),
+  read("../lib/revision.ts"), read("../data/guided-demo.json"), read("../lib/session.ts"), read("../app/api/extract/route.ts"),
 ]);
 
 function transpileTypeScript(source) {
@@ -27,6 +27,7 @@ async function importTypeScript(source, replacements = {}) {
 const revision = await importTypeScript(revisionSource);
 const i18nModuleUrl = `data:text/javascript;base64,${Buffer.from(transpileTypeScript(i18n)).toString("base64")}`;
 const receipt = await importTypeScript(receiptSource, { "./i18n": i18nModuleUrl });
+const session = await importTypeScript(sessionSource);
 const demo = JSON.parse(demoText);
 
 const claim = {
@@ -98,6 +99,51 @@ test("find-better-evidence action marks the claim as unresolved", () => {
   const result = revision.buildSuggestedRevision(draft, claim, source, "research", "en");
   assert.match(result, /\[EVIDENCE PENDING: Coffee cures every headache\.\]/);
   assert.ok(revision.diffDrafts(draft, result, true).revised.some((part) => part.kind === "pending"));
+});
+
+test("transparent action preserves the claim and explicitly states the limitation", () => {
+  const result = revision.buildSuggestedRevision(draft, claim, source, "transparent", "en");
+  assert.match(result, /Coffee cures every headache/);
+  assert.match(result, /did not establish a cure/);
+  assert.match(result, /Closing sentence\.$/);
+});
+
+test("local session history supports save, resume data, duplication and deletion", () => {
+  const values = new Map();
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  const saved = { version: 1, id: "one", createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z", language: "pt", step: 3, draft, analysis: null, selectedClaimId: "c1", selectedSourceIds: ["s1"], primarySourceId: "s1", sources: [source], support: "partial", supportJustification: "Limited evidence", action: "context", revised: draft, translatedDraft: "", reflection: "context", comparisonNotes: session.EMPTY_COMPARISON_NOTES, citations: [], checklist: [], pendingAcknowledged: false, sourceNotes: "", status: "in_progress" };
+  session.upsertSession(storage, saved);
+  assert.equal(session.readSessions(storage)[0].draft, draft);
+  const copy = session.duplicateSession(saved);
+  assert.notEqual(copy.id, saved.id);
+  session.removeSession(storage, saved.id);
+  assert.equal(session.readSessions(storage).length, 0);
+  session.upsertSession(storage, saved);
+  session.clearSessions(storage);
+  assert.equal(session.readSessions(storage).length, 0);
+});
+
+test("passage citations are re-anchored and broken associations are flagged", () => {
+  const citation = { id: "r1", revisedTextStart: 0, revisedTextEnd: 5, sourceId: "s1", citedText: "limited" };
+  assert.equal(session.reanchorCitations("A limited result", [citation])[0].revisedTextStart, 2);
+  assert.equal(session.reanchorCitations("Changed text", [citation])[0].broken, true);
+});
+
+test("URL extraction blocks SSRF targets and uses bounded server-side fetching", () => {
+  assert.match(extractRoute, /isPrivateAddress/);
+  assert.match(extractRoute, /hostname === "localhost"/);
+  assert.match(extractRoute, /redirect: "manual"/);
+  assert.match(extractRoute, /MAX_RESPONSE_BYTES/);
+  assert.match(extractRoute, /AbortController/);
+});
+
+test("multi-source comparison and passage traceability are part of the real flow and exports", () => {
+  assert.match(page, /selectedSourceIds/);
+  assert.match(page, /selectedSources\.length > 1/);
+  assert.match(page, /SourceComparison/);
+  assert.match(page, /CitationEditor/);
+  assert.match(receiptSource, /comparisonLines/);
+  assert.match(receiptSource, /textWithLink/);
 });
 
 test("requires a human support choice and justification before continuing", () => {
