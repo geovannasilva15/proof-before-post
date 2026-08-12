@@ -90,6 +90,9 @@ function analysisErrorMessage(language: Language, code: AnalysisErrorCode | null
     CONFIGURATION_ERROR: "configurationError",
     NO_VERIFIABLE_CLAIMS: "noClaimsError",
     NO_VERIFIED_SOURCES: "noSourcesError",
+    RATE_LIMITED: "rateLimitedError",
+    TIMEOUT: "timeoutError",
+    INVALID_RESPONSE: "invalidResponseError",
     INVALID_REQUEST: "invalidRequestError",
     UPSTREAM_ERROR: "upstreamError",
   };
@@ -246,7 +249,7 @@ export default function Home() {
       const result: unknown = await response.json().catch(() => null);
       if (!response.ok || !validateAnalysisResult(result)) {
         const rawCode = result && typeof result === "object" && "code" in result ? String(result.code) : "UPSTREAM_ERROR";
-        const allowed: AnalysisErrorCode[] = ["CONFIGURATION_ERROR", "INVALID_REQUEST", "NO_VERIFIABLE_CLAIMS", "NO_VERIFIED_SOURCES", "UPSTREAM_ERROR"];
+        const allowed: AnalysisErrorCode[] = ["CONFIGURATION_ERROR", "INVALID_REQUEST", "NO_VERIFIABLE_CLAIMS", "NO_VERIFIED_SOURCES", "RATE_LIMITED", "TIMEOUT", "INVALID_RESPONSE", "UPSTREAM_ERROR"];
         setAnalysisError(allowed.includes(rawCode as AnalysisErrorCode) ? rawCode as AnalysisErrorCode : "UPSTREAM_ERROR");
         return;
       }
@@ -416,7 +419,7 @@ function SourceEditor({ source, language, onChange }: { source: ResearchSource; 
   const t = (key: TranslationKey) => translate(language, key);
   const provenance = source.provenance === "user" ? t("userEdited") : source.provenance === "demo" ? t("guidedSource") : t("researchSource");
   const fields: Array<{ field: SourceField; key: TranslationKey; multiline?: boolean }> = [{ field: "title", key: "sourceTitle" }, { field: "authorOrInstitution", key: "authorInstitution" }, { field: "publishedAt", key: "publishedDate" }, { field: "sourceType", key: "sourceType" }, { field: "measuredOrReported", key: "measuredReported", multiline: true }, { field: "doesNotEstablish", key: "doesNotEstablish", multiline: true }, { field: "contextLimitations", key: "contextLimitations", multiline: true }, { field: "relationSummary", key: "relationSummary", multiline: true }, { field: "url", key: "sourceUrl" }, { field: "accessedAt", key: "accessDate" }];
-  return <article className="source-details source-editor"><div><span>{t("selectedSource")}</span><a href={source.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a></div><p className={`source-provenance ${source.provenance}`}>{provenance}</p><div className="source-form">{fields.map(({ field, key, multiline }) => <label key={field}>{t(key)}{multiline ? <textarea value={source[field]} onChange={(event) => onChange(field, event.target.value)} /> : <input type={field === "publishedAt" || field === "accessedAt" ? "date" : field === "url" ? "url" : "text"} value={source[field]} onChange={(event) => onChange(field, event.target.value)} placeholder={field === "authorOrInstitution" || field === "sourceType" ? t("unidentified") : undefined} />}</label>)}</div></article>;
+  return <article className="source-details source-editor"><div><span>{t("selectedSource")}</span><a href={source.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a></div><p className={`source-provenance ${source.provenance}`}>{provenance}</p><div className="source-form">{fields.map(({ field, key, multiline }) => <label key={field}>{t(key)}{multiline ? <textarea value={source[field]} onChange={(event) => onChange(field, event.target.value)} /> : <input type={field === "accessedAt" ? "date" : field === "url" ? "url" : "text"} value={source[field]} onChange={(event) => onChange(field, event.target.value)} placeholder={field === "authorOrInstitution" || field === "sourceType" ? t("unidentified") : undefined} />}</label>)}</div></article>;
 }
 
 function ReceiptSection({ label, value }: { label: string; value: string }) { return <div className="receipt-section"><span>{label}</span><p>{value}</p></div>; }

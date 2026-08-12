@@ -41,6 +41,9 @@ export type AnalysisErrorCode =
   | "INVALID_REQUEST"
   | "NO_VERIFIABLE_CLAIMS"
   | "NO_VERIFIED_SOURCES"
+  | "RATE_LIMITED"
+  | "TIMEOUT"
+  | "INVALID_RESPONSE"
   | "UPSTREAM_ERROR";
 
 export type AnalysisErrorPayload = {
