@@ -34,8 +34,9 @@ The Evidence Receipt documents the creator's verification process. It does **not
 - Five editorial actions that produce distinct, editable draft revisions.
 - Original-versus-revised comparison with removed, added and unresolved highlights.
 - Source-to-revision traceability.
-- Private, browser-only review history with resume, duplicate and delete controls.
-- Structured source comparison without a truth score.
+- Private, browser-only review history with search, status filters, resume, duplicate and delete controls.
+- Structured source comparison without a truth score, presented as a table on desktop and source cards on mobile.
+- Visual passage-level citation preview that never inserts hidden markers into copied text.
 - Safe public-URL import with SSRF, redirect, size and timeout controls.
 - Separate, editable translated copy that preserves the original text.
 - Completion checklist and explicit unresolved-evidence status.

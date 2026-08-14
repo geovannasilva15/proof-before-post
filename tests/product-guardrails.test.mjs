@@ -242,3 +242,26 @@ test("keeps the key ethical disclaimer in both languages", () => {
   assert.match(i18n, /It does not certify that the content is true/);
   assert.match(receiptSource, /receiptDisclaimer/);
 });
+
+test("explains local-only storage without contradicting the saved history", () => {
+  assert.match(i18n, /Sem conta e sem armazenamento em nossos servidores/);
+  assert.match(i18n, /Suas revisões reais ficam somente neste navegador/);
+  assert.doesNotMatch(i18n, /noPermanentStorage: "Sem armazenamento permanente"/);
+  assert.match(page, /local-storage-note/);
+});
+
+test("provides searchable status-aware history and explicit save-and-exit", () => {
+  assert.match(page, /historySearchPlaceholder/);
+  assert.match(page, /filter === "all" \|\| session\.status === filter/);
+  assert.match(page, /saveAndExit/);
+  assert.match(page, /savedLocally/);
+  assert.match(page, /status-badge/);
+});
+
+test("renders responsive source comparison and visual citation associations", () => {
+  assert.match(page, /comparison-mobile/);
+  assert.match(page, /comparisonField/);
+  assert.match(page, /function CitationPreview/);
+  assert.match(page, /citedBy/);
+  assert.match(page, /citation-preview/);
+});

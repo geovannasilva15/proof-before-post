@@ -12,6 +12,17 @@ async function completeGuidedReview(page: Page, language: "pt" | "en") {
   await page.getByRole("button", { name: new RegExp(language === "pt" ? "Corrigir a afirmação" : "Correct the claim") }).click();
   await page.getByRole("button", { name: language === "pt" ? /Revisar o conteúdo/ : /Revise the content/ }).click();
   await page.getByRole("button", { name: language === "pt" ? "Reduzi o alcance da afirmação" : "I narrowed the scope of the claim" }).click();
+  await expect(page.locator(".citation-preview mark")).toBeVisible();
+  if (language === "pt") {
+    const revised = page.getByLabel("Versão revisada");
+    await revised.click();
+    await revised.press("Control+Home");
+    for (let index = 0; index < 12; index += 1) await revised.press("Shift+ArrowRight");
+    await page.locator(".citation-form select").selectOption("unesco-press-release-2024");
+    await page.locator(".citation-form input").fill("Conferido na fonte original.");
+    await page.getByRole("button", { name: "Associar fonte ao trecho" }).click();
+    await expect(page.locator(".citation-card li")).toHaveCount(2);
+  }
   await page.getByRole("button", { name: language === "pt" ? "Gerar versão traduzida" : "Generate translated version", exact: true }).click();
   await expect(page.locator(".translation-card .field-error")).toContainText(language === "pt" ? "Não foi possível" : "could not");
   const checklist = page.locator(".checklist-card input[type=checkbox]");
@@ -113,4 +124,65 @@ test("research timeout and invalid response stay transparent", async ({ page }) 
     await expect(page.locator(".analysis-error")).toContainText("A pesquisa não foi concluída");
     await page.unroute("**/api/analyze");
   }
+});
+
+test("local history can be saved, searched, filtered and resumed", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Revisar meu rascunho" }).first().click();
+  const draftText = "O relatório municipal informa que a coleta seletiva cresceu 18% em 2025.";
+  await page.getByLabel("Seu rascunho").fill(draftText);
+  await expect(page.getByText(/Salvo neste navegador às/)).toBeVisible();
+  await page.getByRole("button", { name: "Salvar e continuar depois" }).click();
+  await expect(page.getByText(draftText)).toBeVisible();
+  await expect(page.locator(".status-badge.in_progress")).toBeVisible();
+  await page.getByPlaceholder("Busque pelo rascunho ou afirmação…").fill("coleta seletiva");
+  await expect(page.locator(".history-list article")).toHaveCount(1);
+  await page.getByLabel("Filtrar por status").selectOption("completed");
+  await expect(page.getByText("Nenhuma revisão corresponde a esta busca.")).toBeVisible();
+  await page.getByLabel("Filtrar por status").selectOption("in_progress");
+  await page.getByRole("button", { name: /Continuar/ }).click();
+  await expect(page.getByLabel("Seu rascunho")).toHaveValue(draftText);
+});
+
+test("three sources are compared on desktop and as cards on mobile", async ({ page }) => {
+  const sources = [1, 2, 3].map((number) => ({
+    id: `source-${number}`,
+    title: `Fonte verificável ${number}`,
+    url: `https://example.com/source-${number}`,
+    authorOrInstitution: `Instituição ${number}`,
+    publishedAt: "2026-08-01",
+    sourceType: "Relatório",
+    methodology: `Metodologia ${number}`,
+    sample: `${number * 100} participantes`,
+    geography: "Brasil",
+    keyFindings: `Resultado principal ${number}`,
+    measuredOrReported: `Indicador ${number}`,
+    doesNotEstablish: `Limitação ${number}`,
+    contextLimitations: `Contexto ${number}`,
+    relationSummary: `Relação ${number}`,
+    accessedAt: "2026-08-14",
+    provenance: "research",
+  }));
+  await page.route("**/api/analyze", async (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      mode: "live",
+      language: "pt",
+      searchedAt: "2026-08-14T12:00:00.000Z",
+      researchSummary: "Três fontes verificáveis foram encontradas.",
+      claims: [{ id: "claim-1", text: "O indicador cresceu 18%.", category: "Dado verificável", reason: "Exige conferência.", question: "Como o indicador foi medido?", tone: "amber", sourceIds: sources.map((source) => source.id) }],
+      sources,
+    }),
+  }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Revisar meu rascunho" }).first().click();
+  await page.getByLabel("Seu rascunho").fill("O indicador cresceu 18%.");
+  await page.getByRole("button", { name: /Pesquisar e encontrar afirmações/ }).click();
+  await page.getByRole("button", { name: /Examinar esta afirmação/ }).click();
+  await expect(page.locator(".comparison-table thead th")).toHaveCount(4);
+  await expect(page.locator(".comparison-table")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".comparison-mobile article")).toHaveCount(3);
+  await expect(page.locator(".comparison-mobile")).toBeVisible();
 });
