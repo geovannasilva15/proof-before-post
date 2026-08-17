@@ -4,6 +4,11 @@ import type { EditorialAction } from "./revision";
 export type SupportDecision = "supports" | "partial" | "does_not_support" | "insufficient";
 export type ReflectionDecision = "narrowed" | "context" | "uncertainty" | "removed" | "research";
 export type SessionStatus = "in_progress" | "completed" | "completed_with_pending";
+export type SourceEditedField = keyof Pick<ResearchSource,
+  "title" | "authorOrInstitution" | "publishedAt" | "sourceType" | "measuredOrReported" |
+  "doesNotEstablish" | "contextLimitations" | "relationSummary" | "url" | "accessedAt" |
+  "methodology" | "sample" | "geography" | "keyFindings"
+>;
 
 export type ComparisonNotes = {
   convergence: string;
@@ -24,7 +29,7 @@ export type RevisionCitation = {
 };
 
 export type ReviewSession = {
-  version: 1;
+  version: 2;
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -47,6 +52,7 @@ export type ReviewSession = {
   checklist: string[];
   pendingAcknowledged: boolean;
   sourceNotes: string;
+  sourceEditedFields: Record<string, SourceEditedField[]>;
   status: SessionStatus;
 };
 
@@ -65,20 +71,35 @@ export function createSessionId() {
   return `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function isReviewSession(value: unknown): value is ReviewSession {
+type LegacyReviewSession = Omit<ReviewSession, "version" | "sourceEditedFields"> & {
+  version: 1;
+  sourceEditedFields?: Record<string, SourceEditedField[]>;
+};
+
+function isSessionShape(value: unknown): value is ReviewSession | LegacyReviewSession {
   if (!value || typeof value !== "object") return false;
-  const session = value as Partial<ReviewSession>;
-  return session.version === 1 && typeof session.id === "string" && typeof session.createdAt === "string" &&
+  const session = value as Partial<ReviewSession | LegacyReviewSession>;
+  return (session.version === 1 || session.version === 2) && typeof session.id === "string" && typeof session.createdAt === "string" &&
     typeof session.updatedAt === "string" && (session.language === "pt" || session.language === "en") &&
     typeof session.draft === "string" && Array.isArray(session.selectedSourceIds) && Array.isArray(session.citations) &&
     Array.isArray(session.checklist) && ["in_progress", "completed", "completed_with_pending"].includes(session.status ?? "");
+}
+
+function migrateSession(session: ReviewSession | LegacyReviewSession): ReviewSession {
+  return {
+    ...session,
+    version: 2,
+    sourceEditedFields: session.sourceEditedFields && typeof session.sourceEditedFields === "object"
+      ? session.sourceEditedFields
+      : {},
+  };
 }
 
 export function readSessions(storage: Pick<Storage, "getItem">) {
   try {
     const parsed: unknown = JSON.parse(storage.getItem(SESSION_STORAGE_KEY) || "[]");
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isReviewSession).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return parsed.filter(isSessionShape).map(migrateSession).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   } catch {
     return [];
   }

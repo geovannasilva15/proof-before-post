@@ -20,6 +20,7 @@ export type ReceiptData = {
   pending?: boolean;
   status?: SessionStatus;
   translatedDraft?: string;
+  unreferencedContext?: boolean;
   createdAt: Date;
 };
 
@@ -46,6 +47,7 @@ const receiptKeys = {
   revised: "receiptFieldRevised",
   reflection: "receiptFieldReflection",
   reviewedAt: "receiptFieldReviewedAt",
+  language: "receiptFieldLanguage",
   citations: "receiptFieldCitations",
   pending: "receiptFieldPending",
   status: "receiptFieldStatus",
@@ -96,6 +98,9 @@ export function buildReceiptSummary(data: ReceiptData) {
     `${l.sample}: ${source.sample || "—"}`,
     `${l.geography}: ${source.geography || "—"}`,
     `${l.findings}: ${source.keyFindings || "—"}`,
+    `${translate(data.language, "contextLimitations")}: ${source.contextLimitations || "—"}`,
+    `${translate(data.language, "relationSummary")}: ${source.relationSummary || "—"}`,
+    `${translate(data.language, "sourceOrigin")}: ${translate(data.language, source.provenance === "user" ? "userEdited" : source.provenance === "demo" ? "guidedSource" : "researchSource")}`,
     `${l.url}: ${source.url}`,
     `${l.accessed}: ${source.accessedAt}`,
     `${l.measured}: ${source.measuredOrReported}`,
@@ -107,11 +112,13 @@ export function buildReceiptSummary(data: ReceiptData) {
     const state = citation.broken ? translate(data.language, "citationAssociationBroken") : source?.title || "—";
     return `${index + 1}. “${citation.citedText}” — ${state}${citation.note ? ` (${citation.note})` : ""}`;
   }) : [translate(data.language, "noPassageReferences")];
+  if (data.unreferencedContext) citationLines.push(translate(data.language, "contextWithoutReference"));
   const pendingText = translate(data.language, data.pending ? "pendingRecorded" : "noPendingRecorded");
   return [
     l.title,
     l.subtitle,
     "",
+    `${l.language}: ${data.language === "pt" ? "Português" : "English"}`,
     `${l.claim}: ${data.claim}`,
     ...sourceLines,
     `${l.support}: ${data.support}`,
@@ -263,6 +270,7 @@ export async function downloadReceiptPdf(data: ReceiptData) {
   write(l.title, { bold: true, size: 23, color: [16, 30, 59] });
   write(l.subtitle, { size: 11, color: [102, 112, 133] });
   y += 16;
+  field(l.language, data.language === "pt" ? "Português" : "English");
   field(l.claim, data.claim);
   sources.forEach((source, index) => {
     field(`${l.source} ${index + 1}`, source.title);
@@ -273,6 +281,9 @@ export async function downloadReceiptPdf(data: ReceiptData) {
     field(l.sample, source.sample || "—");
     field(l.geography, source.geography || "—");
     field(l.findings, source.keyFindings || "—");
+    field(translate(data.language, "contextLimitations"), source.contextLimitations || "—");
+    field(translate(data.language, "relationSummary"), source.relationSummary || "—");
+    field(translate(data.language, "sourceOrigin"), translate(data.language, source.provenance === "user" ? "userEdited" : source.provenance === "demo" ? "guidedSource" : "researchSource"));
     field(l.measured, source.measuredOrReported);
     field(l.limitation, source.doesNotEstablish);
     ensureSpace(30);
@@ -281,6 +292,7 @@ export async function downloadReceiptPdf(data: ReceiptData) {
     const urlLines = doc.splitTextToSize(source.url, contentWidth) as string[];
     for (const line of urlLines) { ensureSpace(14); doc.textWithLink(line, margin, y, { url: source.url }); y += 14; }
     y += 10;
+    field(l.accessed, source.accessedAt || "—");
   });
   field(l.support, data.support);
   field(l.justification, data.justification);
@@ -291,9 +303,9 @@ export async function downloadReceiptPdf(data: ReceiptData) {
   field(l.reflection, data.reflection);
   for (const line of comparisonLines(data)) field(translate(data.language, "comparisonTitle"), line);
   field(l.status, statusText(data.language, data.status));
-  field(l.pending, translate(data.language, data.pending ? "yes" : "no"));
+  field(l.pending, translate(data.language, data.pending ? "pendingRecorded" : "noPendingRecorded"));
   field(l.checklist, checklistText(data.language, data.checklist) || "—");
-  field(l.citations, (data.citations ?? []).map((citation) => { const source = sources.find((item) => item.id === citation.sourceId); return `“${citation.citedText}” — ${source?.title || "—"}${citation.broken ? ` (${translate(data.language, "citationBroken")})` : ""}`; }).join("; ") || "—");
+  field(l.citations, [(data.citations ?? []).map((citation) => { const source = sources.find((item) => item.id === citation.sourceId); return `“${citation.citedText}” — ${source?.title || "—"}${citation.broken ? ` (${translate(data.language, "citationBroken")})` : ""}${citation.note ? ` · ${citation.note}` : ""}`; }).join("; ") || translate(data.language, "noPassageReferences"), data.unreferencedContext ? translate(data.language, "contextWithoutReference") : ""].filter(Boolean).join("; "));
   field(l.reviewedAt, new Intl.DateTimeFormat(locale(data.language), { dateStyle: "medium", timeStyle: "short" }).format(data.createdAt));
   ensureSpace(70); y += 10;
   write(l.disclaimer, { bold: true, size: 10, color: [16, 30, 59] });

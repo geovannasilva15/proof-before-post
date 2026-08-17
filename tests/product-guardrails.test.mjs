@@ -113,8 +113,11 @@ test("local session history supports save, resume data, duplication and deletion
   const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
   const saved = { version: 1, id: "one", createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z", language: "pt", step: 3, draft, analysis: null, selectedClaimId: "c1", selectedSourceIds: ["s1"], primarySourceId: "s1", sources: [source], support: "partial", supportJustification: "Limited evidence", action: "context", revised: draft, translatedDraft: "", reflection: "context", comparisonNotes: session.EMPTY_COMPARISON_NOTES, citations: [], checklist: [], pendingAcknowledged: false, sourceNotes: "", status: "in_progress" };
   session.upsertSession(storage, saved);
-  assert.equal(session.readSessions(storage)[0].draft, draft);
-  const copy = session.duplicateSession(saved);
+  const migrated = session.readSessions(storage)[0];
+  assert.equal(migrated.draft, draft);
+  assert.equal(migrated.version, 2);
+  assert.deepEqual(migrated.sourceEditedFields, {});
+  const copy = session.duplicateSession(migrated);
   assert.notEqual(copy.id, saved.id);
   session.removeSession(storage, saved.id);
   assert.equal(session.readSessions(storage).length, 0);
@@ -195,7 +198,7 @@ test("centralizes Portuguese and English interface copy", () => {
   assert.doesNotMatch(receiptSource, /associação quebrada|broken association|Nenhuma referência por trecho|No passage-level references/);
   assert.equal(receipt.localizedStatus("pt", "completed_with_pending"), "Concluída com pendência assumida");
   assert.equal(receipt.localizedStatus("en", "completed"), "Completed");
-  assert.match(page, /localizedStatus\(language, sessionStatus\)/);
+  assert.match(page, /localizedStatus\(language, status\)/);
 });
 
 test("shows when imported content was truncated before confirmation", () => {
@@ -234,7 +237,8 @@ test("downloads a PNG with a stable filename and delayed URL cleanup", () => {
 test("copies the summary with a fallback when Clipboard API is unavailable", () => {
   assert.match(page, /navigator\.clipboard\?\.writeText/);
   assert.match(page, /document\.execCommand\("copy"\)/);
-  assert.match(page, /setCopyError\(true\)/);
+  assert.match(page, /setCopyState\("loading"\)/);
+  assert.match(page, /setCopyState\("error"\)/);
 });
 
 test("keeps the key ethical disclaimer in both languages", () => {
@@ -256,6 +260,8 @@ test("provides searchable status-aware history and explicit save-and-exit", () =
   assert.match(page, /saveAndExit/);
   assert.match(page, /savedLocally/);
   assert.match(page, /status-badge/);
+  assert.match(page, /languageFilter === "all" \|\| session\.language === languageFilter/);
+  assert.match(page, /sortOrder === "newest"/);
 });
 
 test("renders responsive source comparison and visual citation associations", () => {
@@ -264,4 +270,23 @@ test("renders responsive source comparison and visual citation associations", ()
   assert.match(page, /function CitationPreview/);
   assert.match(page, /citedBy/);
   assert.match(page, /citation-preview/);
+  assert.match(page, /citationSourceIds/);
+  assert.match(page, /type="checkbox" checked=\{sourceIds\.includes\(item\.id\)\}/);
+  assert.match(page, /hasUnreferencedAddedContext/);
+});
+
+test("rejects duplicate normalized source URLs and records user-corrected fields", () => {
+  assert.match(page, /normalizeUrl\(item\.url\)/);
+  assert.match(page, /new Set\(normalizedSourceUrls\)\.size !== normalizedSourceUrls\.length/);
+  assert.match(page, /duplicateSource/);
+  assert.match(sessionSource, /sourceEditedFields: Record<string, SourceEditedField\[\]>/);
+  assert.match(page, /editedFields\.includes\(field\)/);
+});
+
+test("exports language, traceability, pending work, checklist and source provenance", () => {
+  for (const value of ["receiptFieldLanguage", "receiptFieldCitations", "receiptFieldPending", "receiptFieldChecklist", "sourceOrigin", "unreferencedContext"]) {
+    assert.match(receiptSource, new RegExp(value));
+  }
+  assert.match(receiptSource, /textWithLink/);
+  assert.match(receiptSource, /proof-before-post-resumo-/);
 });
