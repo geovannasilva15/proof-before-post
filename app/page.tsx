@@ -6,6 +6,7 @@ import { useNarrator, type NarratorState } from "../hooks/useNarrator";
 import { useReviewHistory } from "../hooks/useReviewHistory";
 import {
   isHttpsUrl,
+  normalizeUrl,
   validateAnalysisResult,
   type AnalysisErrorCode,
   type AnalysisResult,
@@ -15,21 +16,17 @@ import {
 } from "../lib/analysis";
 import { translate, type TranslationKey } from "../lib/i18n";
 import { buildReceiptSummary, downloadReceiptPdf, downloadReceiptPng, localizedStatus, type ReceiptData } from "../lib/receipt";
-import { buildSuggestedRevision, diffDrafts, type EditorialAction } from "../lib/revision";
+import { buildSuggestedRevision, diffDrafts, type DiffPart, type EditorialAction } from "../lib/revision";
 import {
   createSessionId, EMPTY_COMPARISON_NOTES, reanchorCitations,
-  type ComparisonNotes, type ReviewSession, type RevisionCitation, type SessionStatus,
+  type ComparisonNotes, type ReviewSession, type RevisionCitation, type SessionStatus, type SourceEditedField,
 } from "../lib/session";
 import { countCharacters } from "../lib/text";
 
 type SupportId = "supports" | "partial" | "does_not_support" | "insufficient";
 type ReflectionId = "narrowed" | "context" | "uncertainty" | "removed" | "research";
 type RevisionOrigin = "none" | "generated" | "guided" | "manual";
-type SourceField = keyof Pick<ResearchSource,
-  "title" | "authorOrInstitution" | "publishedAt" | "sourceType" | "measuredOrReported" |
-  "doesNotEstablish" | "contextLimitations" | "relationSummary" | "url" | "accessedAt" |
-  "methodology" | "sample" | "geography" | "keyFindings"
->;
+type SourceField = SourceEditedField;
 
 const MAX_CHARACTERS = 1500;
 const CHECKLIST_IDS = ["opened", "identity", "date", "method", "limitation", "scope", "final"] as const;
@@ -129,8 +126,7 @@ export default function Home() {
   const [revised, setRevised] = useState("");
   const [reflection, setReflection] = useState<ReflectionId | "">("");
   const [sourceNotes, setSourceNotes] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [downloadState, setDownloadState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [pdfState, setPdfState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [researching, setResearching] = useState(false);
@@ -138,11 +134,11 @@ export default function Home() {
   const [needsResearchRefresh, setNeedsResearchRefresh] = useState(false);
   const [revisionTab, setRevisionTab] = useState<"original" | "revised">("revised");
   const [revisionOrigin, setRevisionOrigin] = useState<RevisionOrigin>("none");
-  const [sourceEditedFields, setSourceEditedFields] = useState<SourceField[]>([]);
+  const [sourceEditedFields, setSourceEditedFields] = useState<Record<string, SourceField[]>>({});
   const [comparisonNotes, setComparisonNotes] = useState<ComparisonNotes>(EMPTY_COMPARISON_NOTES);
   const [citations, setCitations] = useState<RevisionCitation[]>([]);
   const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
-  const [citationSourceId, setCitationSourceId] = useState("");
+  const [citationSourceIds, setCitationSourceIds] = useState<string[]>([]);
   const [citationNote, setCitationNote] = useState("");
   const [citationError, setCitationError] = useState("");
   const [checklist, setChecklist] = useState<string[]>([]);
@@ -178,7 +174,9 @@ export default function Home() {
   }, [analysis, claim]);
   const source = relatedSources.find((item) => item.id === selectedSourceId) ?? relatedSources[0];
   const selectedSources = relatedSources.filter((item) => selectedSourceIds.includes(item.id));
-  const sourceValid = selectedSources.length > 0 && selectedSources.length <= 3 && selectedSources.every((item) => item.title.trim() && item.measuredOrReported.trim() && isHttpsUrl(item.url));
+  const normalizedSourceUrls = selectedSources.filter((item) => isHttpsUrl(item.url)).map((item) => normalizeUrl(item.url));
+  const hasDuplicateSources = new Set(normalizedSourceUrls).size !== normalizedSourceUrls.length;
+  const sourceValid = selectedSources.length > 0 && selectedSources.length <= 3 && !hasDuplicateSources && selectedSources.every((item) => item.title.trim() && item.measuredOrReported.trim() && isHttpsUrl(item.url));
   const supportOptions = getSupportOptions(language);
   const actionOptions = getActionOptions(language);
   const reflectionOptions = getReflectionOptions(language);
@@ -191,6 +189,7 @@ export default function Home() {
   const draftExcess = Math.max(0, draftCount - MAX_CHARACTERS);
   const revisedExcess = Math.max(0, revisedCount - MAX_CHARACTERS);
   const diff = useMemo(() => diffDrafts(draft, revised, action === "research"), [action, draft, revised]);
+  const hasUnreferencedContext = useMemo(() => hasUnreferencedAddedContext(diff.revised, citations), [citations, diff.revised]);
   const checklistComplete = CHECKLIST_IDS.every((id) => checklist.includes(id));
   const pending = action === "research";
   const sessionStatus: SessionStatus = step < 6 ? "in_progress" : pending ? "completed_with_pending" : "completed";
@@ -200,15 +199,15 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       const updatedAt = new Date().toISOString();
       saveSession({
-      version: 1, id: sessionId, createdAt: sessionCreatedAt || updatedAt, updatedAt,
+      version: 2, id: sessionId, createdAt: sessionCreatedAt || updatedAt, updatedAt,
       language, step, draft, analysis, selectedClaimId, selectedSourceIds, primarySourceId: selectedSourceId,
       sources: analysis?.sources ?? [], support, supportJustification, action, revised, translatedDraft, reflection,
-      comparisonNotes, citations, checklist, pendingAcknowledged, sourceNotes, status: sessionStatus,
+      comparisonNotes, citations, checklist, pendingAcknowledged, sourceNotes, sourceEditedFields, status: sessionStatus,
       });
       setLastSavedAt(updatedAt);
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [action, analysis, checklist, citations, comparisonNotes, draft, guided, historyReady, language, pendingAcknowledged, reflection, revised, saveSession, selectedClaimId, selectedSourceId, selectedSourceIds, sessionCreatedAt, sessionId, sessionStatus, sourceNotes, step, support, supportJustification, translatedDraft]);
+  }, [action, analysis, checklist, citations, comparisonNotes, draft, guided, historyReady, language, pendingAcknowledged, reflection, revised, saveSession, selectedClaimId, selectedSourceId, selectedSourceIds, sessionCreatedAt, sessionId, sessionStatus, sourceEditedFields, sourceNotes, step, support, supportJustification, translatedDraft]);
 
   function resetReview() {
     requestController.current?.abort();
@@ -223,11 +222,10 @@ export default function Home() {
     setRevisionAction("");
     setRevised("");
     setRevisionOrigin("none");
-    setSourceEditedFields([]);
+    setSourceEditedFields({});
     setReflection("");
     setSourceNotes("");
-    setCopied(false);
-    setCopyError(false);
+    setCopyState("idle");
     setDownloadState("idle");
     setPdfState("idle");
     setAnalysisError(null);
@@ -264,10 +262,10 @@ export default function Home() {
     }
     const updatedAt = new Date().toISOString();
     saveSession({
-      version: 1, id: sessionId, createdAt: sessionCreatedAt || updatedAt, updatedAt,
+      version: 2, id: sessionId, createdAt: sessionCreatedAt || updatedAt, updatedAt,
       language, step, draft, analysis, selectedClaimId, selectedSourceIds, primarySourceId: selectedSourceId,
       sources: analysis?.sources ?? [], support, supportJustification, action, revised, translatedDraft, reflection,
-      comparisonNotes, citations, checklist, pendingAcknowledged, sourceNotes, status: sessionStatus,
+      comparisonNotes, citations, checklist, pendingAcknowledged, sourceNotes, sourceEditedFields, status: sessionStatus,
     });
     setLastSavedAt(updatedAt);
     setStep(0);
@@ -281,8 +279,9 @@ export default function Home() {
       const nextDraft = guidedDemo[nextLanguage].draft;
       const nextAnalysis = buildDemo(nextLanguage);
       let nextSource = nextAnalysis.sources[0];
-      if (source && sourceEditedFields.length) {
-        for (const field of sourceEditedFields) nextSource = { ...nextSource, [field]: source[field] };
+      const editedFields = source ? sourceEditedFields[source.id] ?? [] : [];
+      if (source && editedFields.length) {
+        for (const field of editedFields) nextSource = { ...nextSource, [field]: source[field] };
         nextSource = { ...nextSource, provenance: "user" };
         nextAnalysis.sources = [nextSource];
       }
@@ -294,7 +293,7 @@ export default function Home() {
         setRevised(buildSuggestedRevision(nextDraft, nextClaim, nextSource, action, nextLanguage));
       }
       setNeedsResearchRefresh(Boolean(
-        sourceEditedFields.length || revisionOrigin === "manual" || supportJustification.trim() || sourceNotes.trim(),
+        editedFields.length || revisionOrigin === "manual" || supportJustification.trim() || sourceNotes.trim(),
       ));
     } else if (analysis?.mode === "live" && analysis.language !== nextLanguage) {
       setNeedsResearchRefresh(true);
@@ -344,7 +343,10 @@ export default function Home() {
 
   function updateSource(field: SourceField, value: string) {
     if (!analysis || !source) return;
-    setSourceEditedFields((fields) => fields.includes(field) ? fields : [...fields, field]);
+    setSourceEditedFields((fields) => ({
+      ...fields,
+      [source.id]: fields[source.id]?.includes(field) ? fields[source.id] : [...(fields[source.id] ?? []), field],
+    }));
     setAnalysis({ ...analysis, sources: analysis.sources.map((item) => item.id === source.id ? { ...item, [field]: value, provenance: "user" } : item) });
   }
 
@@ -356,7 +358,7 @@ export default function Home() {
     setSupport(saved.support); setSupportJustification(saved.supportJustification); setAction(saved.action); setRevisionAction(saved.action);
     setRevised(saved.revised); setTranslatedDraft(saved.translatedDraft); setReflection(saved.reflection);
     setComparisonNotes(saved.comparisonNotes); setCitations(saved.citations); setChecklist(saved.checklist);
-    setPendingAcknowledged(saved.pendingAcknowledged); setSourceNotes(saved.sourceNotes); setGuided(false);
+    setPendingAcknowledged(saved.pendingAcknowledged); setSourceNotes(saved.sourceNotes); setSourceEditedFields(saved.sourceEditedFields); setGuided(false);
   }
 
   async function extractUrl() {
@@ -391,8 +393,13 @@ export default function Home() {
   function addCitation() {
     const { start, end } = selectionRange;
     const citedText = revised.slice(start, end);
-    if (!citedText || !citationSourceId) { setCitationError(t("noCitationSelection")); return; }
-    setCitations((items) => [...items, { id: createSessionId(), revisedTextStart: start, revisedTextEnd: end, sourceId: citationSourceId, citedText, note: citationNote.trim() || undefined, broken: false }]);
+    if (!citedText || citationSourceIds.length === 0) { setCitationError(t("noCitationSelection")); return; }
+    setCitations((items) => {
+      const additions = citationSourceIds
+        .filter((sourceId) => !items.some((item) => item.sourceId === sourceId && item.revisedTextStart === start && item.revisedTextEnd === end))
+        .map((sourceId) => ({ id: createSessionId(), revisedTextStart: start, revisedTextEnd: end, sourceId, citedText, note: citationNote.trim() || undefined, broken: false }));
+      return [...items, ...additions];
+    });
     setCitationNote(""); setCitationError("");
   }
 
@@ -454,13 +461,13 @@ export default function Home() {
 
   function receiptData(): ReceiptData | null {
     if (!claim || !selectedSources.length || !support || !action || !reflection) return null;
-    return { language, claim: claim.text, sources: selectedSources, support: supportLabel, justification: supportJustification, decision: actionLabel, originalDraft: draft, revisedDraft: revised, reflection: reflectionLabel, comparisonNotes, citations, checklist, pending, status: sessionStatus, translatedDraft, createdAt: new Date() };
+    return { language, claim: claim.text, sources: selectedSources, support: supportLabel, justification: supportJustification, decision: actionLabel, originalDraft: draft, revisedDraft: revised, reflection: reflectionLabel, comparisonNotes, citations, checklist, pending, status: sessionStatus, translatedDraft, unreferencedContext: hasUnreferencedContext, createdAt: new Date() };
   }
 
   async function copyReceipt() {
     const data = receiptData();
-    if (!data) return;
-    setCopyError(false);
+    if (!data || copyState === "loading" || downloadState === "loading" || pdfState === "loading") return;
+    setCopyState("loading");
     try {
       const text = buildReceiptSummary(data);
       let copiedWithClipboard = false;
@@ -475,14 +482,14 @@ export default function Home() {
         area.remove();
         if (!copiedWithFallback) throw new Error("Copy failed");
       }
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2200);
-    } catch { setCopyError(true); }
+      setCopyState("success");
+      window.setTimeout(() => setCopyState("idle"), 2200);
+    } catch { setCopyState("error"); }
   }
 
   async function downloadReceipt() {
     const data = receiptData();
-    if (!data || downloadState === "loading") return;
+    if (!data || downloadState === "loading" || pdfState === "loading" || copyState === "loading") return;
     setDownloadState("loading");
     try {
       await downloadReceiptPng(data);
@@ -493,7 +500,7 @@ export default function Home() {
 
   async function downloadPdf() {
     const data = receiptData();
-    if (!data || pdfState === "loading") return;
+    if (!data || pdfState === "loading" || downloadState === "loading" || copyState === "loading") return;
     setPdfState("loading");
     try { await downloadReceiptPdf(data); setPdfState("success"); window.setTimeout(() => setPdfState("idle"), 2600); }
     catch { setPdfState("error"); }
@@ -510,12 +517,13 @@ export default function Home() {
         <button type="button" onClick={saveAndExit}>{t("saveAndExit")}</button>
       </div>}
       {needsResearchRefresh && <div className="translation-notice global" role="status"><span>i</span><p>{t("interfaceTranslated")}</p>{analysis?.mode === "live" && <button type="button" onClick={returnToResearch}>{t("reviewResearchLanguage")}</button>}</div>}
+      {step > 1 && step < 6 && <PreviousStepsSummary language={language} draft={draft} claim={claim?.text ?? ""} sources={selectedSources} support={supportLabel} decision={actionLabel} />}
 
       {step === 1 && <>
         <StepIntro eyebrow={t("step1")} title={t("reviewBeforePost")} lead={t("step1Lead")} />
-        <div className="input-tabs" role="tablist" aria-label={t("inputMethod")}><button role="tab" aria-selected={inputMode === "text"} className={inputMode === "text" ? "active" : ""} onClick={() => setInputMode("text")}>{t("pasteText")}</button><button role="tab" aria-selected={inputMode === "url"} className={inputMode === "url" ? "active" : ""} onClick={() => setInputMode("url")}>{t("importUrl")}</button></div>
-        {inputMode === "url" && <section className="url-import-card"><label htmlFor="publication-url">{t("publicationUrl")}</label><div><input id="publication-url" type="url" value={urlInput} onChange={(event) => setUrlInput(event.target.value)} placeholder={t("publicationUrlPlaceholder")} /><button className="secondary-button" disabled={!urlInput.trim() || extractionState === "loading"} onClick={extractUrl}>{extractionState === "loading" ? t("extractingUrl") : t("extractUrl")}</button></div>{extractionError && <p className="field-error" role="alert">{extractionError}</p>}{extractionState === "ready" && <div className="extraction-preview"><strong>{t("extractionPreview")}</strong>{extractionTruncated && <p role="status">{t("extractionTruncated")}</p>}<textarea value={extractionPreview} onChange={(event) => setExtractionPreview(event.target.value)} /><div><button className="primary-button" onClick={confirmExtraction}>{t("confirmExtraction")}</button><button className="text-button" onClick={() => { setExtractionState("idle"); setExtractionPreview(""); setExtractionTruncated(false); }}>{t("cancelExtraction")}</button></div></div>}</section>}
-        {inputMode === "text" && <section className="editor-grid"><div className="draft-card"><label htmlFor="draft">{t("yourDraft")}</label><textarea id="draft" aria-label={t("draftLabel")} value={draft} placeholder={t("draftPlaceholder")} onChange={(event) => updateDraft(event.target.value)} autoFocus /><div className={`draft-meta ${draftCount >= 1400 ? "near-limit" : ""}`}><span>{t("maxCharacters")}</span><strong aria-live="polite">{t("characterCounter", { count: formatNumber(language, draftCount), maximum: formatNumber(language, MAX_CHARACTERS) })}</strong><small>{t("characterCountingHelp")}</small>{draftExcess > 0 && <p className="field-error" role="alert">{t("charactersOverLimit", { count: formatNumber(language, draftExcess) })}</p>}</div></div><InfoCard language={language} /></section>}
+        <div className="input-tabs" role="tablist" aria-label={t("inputMethod")}><button id="input-tab-text" role="tab" aria-controls="input-panel-text" aria-selected={inputMode === "text"} tabIndex={inputMode === "text" ? 0 : -1} className={inputMode === "text" ? "active" : ""} onKeyDown={(event) => handleTabKey(event, "text", setInputMode)} onClick={() => setInputMode("text")}>{t("pasteText")}</button><button id="input-tab-url" role="tab" aria-controls="input-panel-url" aria-selected={inputMode === "url"} tabIndex={inputMode === "url" ? 0 : -1} className={inputMode === "url" ? "active" : ""} onKeyDown={(event) => handleTabKey(event, "url", setInputMode)} onClick={() => setInputMode("url")}>{t("importUrl")}</button></div>
+        {inputMode === "url" && <section id="input-panel-url" role="tabpanel" aria-labelledby="input-tab-url" className="url-import-card"><label htmlFor="publication-url">{t("publicationUrl")} <RequiredMark language={language} /></label><div><input id="publication-url" type="url" required aria-invalid={Boolean(extractionError)} aria-describedby={extractionError ? "url-error" : undefined} value={urlInput} onChange={(event) => setUrlInput(event.target.value)} placeholder={t("publicationUrlPlaceholder")} /><button className="secondary-button" disabled={!urlInput.trim() || extractionState === "loading"} onClick={extractUrl}>{extractionState === "loading" ? t("extractingUrl") : t("extractUrl")}</button></div>{extractionError && <p id="url-error" className="field-error" role="alert">{extractionError}</p>}{extractionState === "ready" && <div className="extraction-preview"><strong>{t("extractionPreview")}</strong>{extractionTruncated && <p role="status">{t("extractionTruncated")}</p>}<textarea aria-label={t("extractionPreview")} value={extractionPreview} onChange={(event) => setExtractionPreview(event.target.value)} /><div><button className="primary-button" onClick={confirmExtraction}>{t("confirmExtraction")}</button><button className="text-button" onClick={() => { setExtractionState("idle"); setExtractionPreview(""); setExtractionTruncated(false); }}>{t("cancelExtraction")}</button></div></div>}</section>}
+        {inputMode === "text" && <section id="input-panel-text" role="tabpanel" aria-labelledby="input-tab-text" className="editor-grid"><div className="draft-card"><label htmlFor="draft">{t("yourDraft")} <RequiredMark language={language} /></label><textarea id="draft" required aria-label={t("draftLabel")} aria-invalid={draftExcess > 0} aria-describedby={draftExcess > 0 ? "draft-help draft-error" : "draft-help"} value={draft} placeholder={t("draftPlaceholder")} onChange={(event) => updateDraft(event.target.value)} autoFocus /><div className={`draft-meta ${draftCount >= 1400 ? "near-limit" : ""}`}><span>{t("maxCharacters")}</span><strong aria-live="polite">{t("characterCounter", { count: formatNumber(language, draftCount), maximum: formatNumber(language, MAX_CHARACTERS) })}</strong><small id="draft-help">{t("characterCountingHelp")}</small>{draftExcess > 0 && <p id="draft-error" className="field-error" role="alert">{t("charactersOverLimit", { count: formatNumber(language, draftExcess) })}</p>}</div></div><InfoCard language={language} /></section>}
         {analysisError && <div className="analysis-error" role="alert"><span>!</span><div><strong>{t("researchFailed")}</strong><p>{analysisErrorMessage(language, analysisError)}</p><button onClick={() => start(true)}>{t("openDemo")}</button></div></div>}
         <Actions back={() => setStep(0)} language={language}><button className="text-button example-link" onClick={() => start(true)}>{t("useDemo")}</button><button className="primary-button" disabled={!draft.trim() || draftExcess > 0 || researching} onClick={analyzeDraft} aria-busy={researching}>{researching ? t("researching") : guided ? t("analyzeDemo") : t("researchClaims")}<span>{researching ? "…" : "→"}</span></button></Actions>
       </>}
@@ -530,8 +538,8 @@ export default function Home() {
 
       {step === 3 && analysis && claim && <>
         <StepIntro eyebrow={t("step3")} title={t("evidenceTitle")} lead={t("evidenceLead")} />
-        <section className="evidence-grid"><div className="evidence-panel"><span className="panel-label">{t("selectedClaim")}</span><blockquote>“{claim.text}”</blockquote><div className="source-heading"><div><span className="panel-label">{t("sourcesFound")}</span><p>{t("selectUpToThree")}</p></div><strong aria-live="polite">{t("selectedSourceCount", { count: selectedSources.length })}</strong></div><div className="source-results">{relatedSources.map((item) => <div key={item.id} className={`source-result ${selectedSourceIds.includes(item.id) ? "selected" : ""}`}><input type="checkbox" aria-label={item.title} checked={selectedSourceIds.includes(item.id)} onChange={() => toggleSource(item.id)} /><button type="button" onClick={() => selectSource(item.id)} aria-pressed={source?.id === item.id}><span>{item.authorOrInstitution || t("unidentified")}</span><strong>{item.title}</strong><small>{item.publishedAt || t("notReported")}</small></button>{selectedSourceIds.includes(item.id) && <button type="button" className="primary-source" onClick={() => setSelectedSourceId(item.id)}>{source?.id === item.id ? t("primarySource") : t("useAsPrimary")}</button>}</div>)}</div>{source && <SourceEditor source={source} language={language} onChange={updateSource} />}{!sourceValid && <p className="field-error" role="alert">{t("invalidUrl")}</p>}<label className="source-notes">{t("sourceNotes")}<textarea value={sourceNotes} onChange={(event) => setSourceNotes(event.target.value)} placeholder={t("sourceNotesPlaceholder")} /></label></div>
-          <aside className="support-panel"><span className="panel-label">{t("yourAssessment")}</span><h2>{t("supportsQuestion")}</h2><ol className="guided-questions"><li>{t("q1")}</li><li>{t("q2")}</li><li>{t("q3")}</li><li>{t("q4")}</li><li>{t("q5")}</li></ol><div className="support-options">{supportOptions.map((item) => <button type="button" key={item.id} className={support === item.id ? "selected" : ""} onClick={() => setSupport(item.id)} aria-pressed={support === item.id}><i>{support === item.id ? "✓" : ""}</i>{item.label}</button>)}</div><label className="support-justification">{t("justification")}<textarea value={supportJustification} onChange={(event) => setSupportJustification(event.target.value)} placeholder={t("justificationPlaceholder")} /></label><NarrationControls narrator={narrator} language={language} text={`${t("q1")} ${t("q2")} ${t("q3")} ${t("q4")} ${t("q5")} ${source?.relationSummary ?? ""}`} label={t("listenEvidence")} /><NarrationStatus state={narrator.state} language={language} voiceName={narrator.voiceName} compact /><div className="human-note">{t("platformDoesNotChoose")}</div></aside>
+        <section className="evidence-grid"><div className="evidence-panel"><span className="panel-label">{t("selectedClaim")}</span><blockquote>“{claim.text}”</blockquote><div className="source-heading"><div><span className="panel-label">{t("sourcesFound")}</span><p>{t("selectUpToThree")}</p></div><strong aria-live="polite">{t("selectedSourceCount", { count: selectedSources.length })}</strong></div><div className="source-results">{relatedSources.map((item) => <div key={item.id} className={`source-result ${selectedSourceIds.includes(item.id) ? "selected" : ""}`}><input type="checkbox" aria-label={item.title} checked={selectedSourceIds.includes(item.id)} onChange={() => toggleSource(item.id)} /><button type="button" onClick={() => selectSource(item.id)} aria-pressed={source?.id === item.id}><span>{item.authorOrInstitution || t("unidentified")}</span><strong>{item.title}</strong><small>{item.publishedAt || t("notReported")}</small></button>{selectedSourceIds.includes(item.id) && <button type="button" className="primary-source" onClick={() => setSelectedSourceId(item.id)}>{source?.id === item.id ? t("primarySource") : t("useAsPrimary")}</button>}</div>)}</div>{source && <SourceEditor source={source} language={language} editedFields={sourceEditedFields[source.id] ?? []} onChange={updateSource} />}{!sourceValid && <p className="field-error" role="alert">{hasDuplicateSources ? t("duplicateSource") : t("invalidUrl")}</p>}<label className="source-notes">{t("sourceNotes")}<textarea value={sourceNotes} onChange={(event) => setSourceNotes(event.target.value)} placeholder={t("sourceNotesPlaceholder")} /></label></div>
+          <aside className="support-panel"><span className="panel-label">{t("yourAssessment")}</span><h2>{t("supportsQuestion")} <RequiredMark language={language} /></h2><ol className="guided-questions"><li>{t("q1")}</li><li>{t("q2")}</li><li>{t("q3")}</li><li>{t("q4")}</li><li>{t("q5")}</li></ol><div className="support-options">{supportOptions.map((item) => <button type="button" key={item.id} className={support === item.id ? "selected" : ""} onClick={() => setSupport(item.id)} aria-pressed={support === item.id}><i>{support === item.id ? "✓" : ""}</i>{item.label}</button>)}</div><label className="support-justification" htmlFor="support-justification">{t("justification")} <RequiredMark language={language} /><textarea id="support-justification" required aria-invalid={Boolean(support && supportJustification.trim().length < 3)} aria-describedby="justification-help" value={supportJustification} onChange={(event) => setSupportJustification(event.target.value)} placeholder={t("justificationPlaceholder")} /><small id="justification-help">{t("justificationHelp")}</small></label><NarrationControls narrator={narrator} language={language} text={`${t("q1")} ${t("q2")} ${t("q3")} ${t("q4")} ${t("q5")} ${source?.relationSummary ?? ""}`} label={t("listenEvidence")} /><NarrationStatus state={narrator.state} language={language} voiceName={narrator.voiceName} compact /><div className="human-note">{t("platformDoesNotChoose")}</div></aside>
         </section>
         {selectedSources.length > 1 && <SourceComparison sources={selectedSources} language={language} notes={comparisonNotes} onChange={(field, value) => setComparisonNotes((current) => ({ ...current, [field]: value }))} />}
         <Actions back={() => setStep(2)} language={language}><button className="primary-button" disabled={!sourceValid || !support || supportJustification.trim().length < 3} onClick={() => setStep(4)}>{t("continueDecision")}<span>→</span></button></Actions>
@@ -546,11 +554,11 @@ export default function Home() {
 
       {step === 5 && claim && source && <>
         <StepIntro eyebrow={t("step5")} title={t("revisionTitle")} lead={t("revisionLead")} />
-        <div className="revision-tabs" role="tablist" aria-label={t("revisionTitle")}><button role="tab" aria-selected={revisionTab === "original"} className={revisionTab === "original" ? "active" : ""} onClick={() => setRevisionTab("original")}>{t("originalDraft")}</button><button role="tab" aria-selected={revisionTab === "revised"} className={revisionTab === "revised" ? "active" : ""} onClick={() => setRevisionTab("revised")}>{t("revisedDraft")}</button></div>
-        <section className={`revision-grid tab-${revisionTab}`}><div className="version-card original"><span>{t("originalDraft")}</span><p className="diff-text">{diff.original.map((part, index) => part.kind === "removed" ? <mark className="diff-removed" key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>)}</p></div><div className="version-card revised"><div className="version-label"><span>{t("revisedDraft")}</span>{guided && <button onClick={() => { setRevised(guidedDemo[language].revision); setRevisionOrigin("guided"); }}>{t("useDemoRevision")}</button>}</div><p className="diff-text revised-preview" aria-hidden="true">{diff.revised.map((part, index) => part.kind === "same" ? <span key={index}>{part.text}</span> : <mark className={part.kind === "pending" ? "diff-pending" : "diff-added"} key={index}>{part.text}</mark>)}</p><textarea ref={revisionRef} value={revised} onSelect={(event) => setSelectionRange({ start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })} onChange={(event) => { setRevised(event.target.value); setCitations((items) => reanchorCitations(event.target.value, items)); setRevisionOrigin("manual"); }} aria-label={t("revisionLabel")} /><div className={`draft-meta ${revisedCount >= 1400 ? "near-limit" : ""}`}><span>{t("maxCharacters")}</span><strong aria-live="polite">{t("characterCounter", { count: formatNumber(language, revisedCount), maximum: formatNumber(language, MAX_CHARACTERS) })}</strong><small>{t("characterCountingHelp")}</small>{revisedExcess > 0 && <p className="field-error" role="alert">{t("charactersOverLimit", { count: formatNumber(language, revisedExcess) })}</p>}</div></div></section>
+        <div className="revision-tabs" role="tablist" aria-label={t("revisionTitle")}><button id="revision-tab-original" role="tab" aria-controls="revision-panel-original" aria-selected={revisionTab === "original"} tabIndex={revisionTab === "original" ? 0 : -1} className={revisionTab === "original" ? "active" : ""} onKeyDown={(event) => handleTabKey(event, "original", setRevisionTab)} onClick={() => setRevisionTab("original")}>{t("originalDraft")}</button><button id="revision-tab-revised" role="tab" aria-controls="revision-panel-revised" aria-selected={revisionTab === "revised"} tabIndex={revisionTab === "revised" ? 0 : -1} className={revisionTab === "revised" ? "active" : ""} onKeyDown={(event) => handleTabKey(event, "revised", setRevisionTab)} onClick={() => setRevisionTab("revised")}>{t("revisedDraft")}</button></div>
+        <section className={`revision-grid tab-${revisionTab}`}><div id="revision-panel-original" role="tabpanel" aria-labelledby="revision-tab-original" className="version-card original"><span>{t("originalDraft")}</span><p className="diff-text">{diff.original.map((part, index) => part.kind === "removed" ? <mark className="diff-removed" key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>)}</p></div><div id="revision-panel-revised" role="tabpanel" aria-labelledby="revision-tab-revised" className="version-card revised"><div className="version-label"><span>{t("revisedDraft")} <RequiredMark language={language} /></span>{guided && <button onClick={() => { setRevised(guidedDemo[language].revision); setRevisionOrigin("guided"); }}>{t("useDemoRevision")}</button>}</div><p className="diff-text revised-preview" aria-hidden="true">{diff.revised.map((part, index) => part.kind === "same" ? <span key={index}>{part.text}</span> : <mark className={part.kind === "pending" ? "diff-pending" : "diff-added"} key={index}>{part.text}</mark>)}</p><textarea ref={revisionRef} required value={revised} onSelect={(event) => setSelectionRange({ start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })} onChange={(event) => { setRevised(event.target.value); setCitations((items) => reanchorCitations(event.target.value, items)); setRevisionOrigin("manual"); }} aria-label={t("revisionLabel")} aria-invalid={revisedExcess > 0} /><div className={`draft-meta ${revisedCount >= 1400 ? "near-limit" : ""}`}><span>{t("maxCharacters")}</span><strong aria-live="polite">{t("characterCounter", { count: formatNumber(language, revisedCount), maximum: formatNumber(language, MAX_CHARACTERS) })}</strong><small>{t("characterCountingHelp")}</small>{revisedExcess > 0 && <p className="field-error" role="alert">{t("charactersOverLimit", { count: formatNumber(language, revisedExcess) })}</p>}</div></div></section>
         <div className="traceability-note"><span>↗</span><p>{t("traceability")} <a href={source.url} target="_blank" rel="noreferrer">{t("openSupportingSource")}</a></p></div><div className="diff-legend"><span><i className="removed" />{t("removedLegend")}</span><span><i className="added" />{t("addedLegend")}</span><span><i className="pending" />{t("pendingLegend")}</span></div>
-        <CitationPreview language={language} text={revised} sources={selectedSources} citations={citations} />
-        <CitationEditor language={language} sources={selectedSources} citations={citations} sourceId={citationSourceId} note={citationNote} error={citationError} onSource={setCitationSourceId} onNote={setCitationNote} onAdd={addCitation} onRemove={(id) => setCitations((items) => items.filter((item) => item.id !== id))} />
+        <CitationPreview language={language} text={revised} sources={selectedSources} citations={citations} hasUnreferencedContext={hasUnreferencedContext} />
+        <CitationEditor language={language} sources={selectedSources} citations={citations} sourceIds={citationSourceIds} note={citationNote} error={citationError} onSources={setCitationSourceIds} onNote={setCitationNote} onAdd={addCitation} onRemove={(id) => setCitations((items) => items.filter((item) => item.id !== id))} />
         <section className="translation-card"><div><strong>{t("translationCopy")}</strong><p>{t("translationOriginalPreserved")}</p></div><button className="secondary-button" disabled={translationState === "loading"} onClick={generateTranslation}>{translationState === "loading" ? t("generatingTranslation") : t("translationCopy")}</button>{translationState === "error" && <p className="field-error" role="alert">{t("translationFailed")}</p>}{translatedDraft && <label>{t("translatedCopy")}<textarea value={translatedDraft} onChange={(event) => setTranslatedDraft(event.target.value)} /></label>}</section>
         <section className="reflection-card"><label>{t("whatChanged")}</label><div>{reflectionOptions.map((item) => <button type="button" key={item.id} className={reflection === item.id ? "selected" : ""} onClick={() => setReflection(item.id)} aria-pressed={reflection === item.id}>{reflection === item.id ? "✓ " : ""}{item.label}</button>)}</div></section>
         <Checklist language={language} checked={checklist} toggle={(id) => setChecklist((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id])} />
@@ -560,10 +568,50 @@ export default function Home() {
 
       {step === 6 && claim && source && <>
         <StepIntro eyebrow={t("receiptEyebrow")} title={t("receiptPageTitle")} lead={t("receiptPageLead")} />
-        <section className="receipt-wrap"><article className="receipt-card" id="receipt"><div className="receipt-header"><div><span className="brand-mark"><span /></span><div><h2>{t("receiptTitle")}</h2><p>{t("receiptSubtitle")}</p></div></div><time>{new Intl.DateTimeFormat(language === "pt" ? "pt-BR" : "en-US").format(new Date())}</time></div><div className={`receipt-status ${sessionStatus}`}>{localizedStatus(language, sessionStatus)}</div><ReceiptSection label={t("claimExamined")} value={`“${claim.text}”`} />{selectedSources.map((item, index) => <div className="receipt-two" key={item.id}><div><span>{t("sourceConsulted")} {index + 1}</span><strong>{item.authorOrInstitution}</strong><p>{item.title} · {item.publishedAt || "—"}</p><a href={item.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a></div><div><span>{t("relationship")}</span><strong>{supportLabel}</strong><p>{item.relationSummary}</p></div></div>)}<ReceiptSection label={t("measuredReported")} value={source.measuredOrReported} /><ReceiptSection label={t("doesNotEstablish")} value={source.doesNotEstablish} /><div className="receipt-two"><div><span>{t("editorialDecision")}</span><strong>{actionLabel}</strong></div><div><span>{t("reflectionLabel")}</span><strong>{reflectionLabel}</strong></div></div><ReceiptSection label={t("justificationLabel")} value={supportJustification} /><ReceiptSection label={t("receiptComparison")} value={Object.values(comparisonNotes).filter((value) => value.trim()).join(" · ") || "—"} /><ReceiptSection label={t("receiptFieldCitations")} value={citations.map((item) => `“${item.citedText}”`).join("; ") || t("contextWithoutReference")} /><ReceiptSection label={t("receiptFieldPending")} value={pending ? t("pendingRecorded") : t("noPendingRecorded")} /><ReceiptSection label={t("receiptFieldChecklist")} value={checklist.length === CHECKLIST_IDS.length ? t("yes") : t("no")} /><div className="receipt-change"><span>{t("changeMade")}</span><div><p>{draft}</p><i>→</i><p>{revised}</p></div></div><div className="receipt-disclaimer"><span>i</span><p><strong>{t("receiptDisclaimer")}</strong></p></div></article><aside className="receipt-actions"><h3>{t("readyShare")}</h3><p>{t("receiptHelp")}</p><button className="primary-button" disabled={downloadState === "loading" || pdfState === "loading"} aria-busy={downloadState === "loading"} onClick={downloadReceipt}>↓ {downloadState === "loading" ? t("preparingDownload") : t("downloadSummary")}</button><p className={`download-status ${downloadState}`} role="status" aria-live="polite">{downloadState === "success" ? t("downloadSuccess") : downloadState === "error" ? t("downloadError") : ""}</p><button className="secondary-button" disabled={pdfState === "loading" || downloadState === "loading"} aria-busy={pdfState === "loading"} onClick={downloadPdf}>↓ {pdfState === "loading" ? t("preparingPdf") : t("downloadPdf")}</button><p className={`download-status ${pdfState}`} role="status" aria-live="polite">{pdfState === "success" ? t("pdfSuccess") : pdfState === "error" ? t("pdfError") : ""}</p><button className="secondary-button" onClick={copyReceipt}>{copied ? t("copied") : t("copySummary")}</button>{copyError && <p className="field-error" role="alert">{t("copyError")}</p>}<button className="text-button" onClick={() => start(false)}>{t("reviewAnother")}</button></aside></section>
+        <section className="receipt-wrap"><ReceiptDocument language={language} claim={claim} sources={selectedSources} source={source} supportLabel={supportLabel} supportJustification={supportJustification} actionLabel={actionLabel} reflectionLabel={reflectionLabel} comparisonNotes={comparisonNotes} citations={citations} checklist={checklist} pending={pending} status={sessionStatus} draft={draft} revised={revised} hasUnreferencedContext={hasUnreferencedContext} /><aside className="receipt-actions"><h3>{t("readyShare")}</h3><p>{t("receiptHelp")}</p><button className="primary-button" disabled={downloadState === "loading" || pdfState === "loading" || copyState === "loading"} aria-busy={downloadState === "loading"} onClick={downloadReceipt}>↓ {downloadState === "loading" ? t("preparingDownload") : t("downloadSummary")}</button><p className={`download-status ${downloadState}`} role="status" aria-live="polite">{downloadState === "success" ? t("downloadSuccess") : downloadState === "error" ? t("downloadError") : ""}</p><button className="secondary-button" disabled={pdfState === "loading" || downloadState === "loading" || copyState === "loading"} aria-busy={pdfState === "loading"} onClick={downloadPdf}>↓ {pdfState === "loading" ? t("preparingPdf") : t("downloadPdf")}</button><p className={`download-status ${pdfState}`} role="status" aria-live="polite">{pdfState === "success" ? t("pdfSuccess") : pdfState === "error" ? t("pdfError") : ""}</p><button className="secondary-button" disabled={copyState === "loading" || downloadState === "loading" || pdfState === "loading"} aria-busy={copyState === "loading"} onClick={copyReceipt}>{copyState === "loading" ? t("copying") : copyState === "success" ? t("copied") : t("copySummary")}</button><p className={`download-status ${copyState}`} role="status" aria-live="polite">{copyState === "success" ? t("copySuccess") : copyState === "error" ? t("copyError") : ""}</p><button className="text-button" onClick={() => start(false)}>{t("reviewAnother")}</button></aside></section>
       </>}
     </main>
   );
+}
+
+function hasUnreferencedAddedContext(parts: DiffPart[], citations: RevisionCitation[]) {
+  let cursor = 0;
+  for (const part of parts) {
+    const start = cursor;
+    const end = start + part.text.length;
+    cursor = end;
+    if (part.kind !== "added" || !part.text.trim()) continue;
+    const covered = citations.some((citation) => !citation.broken && citation.revisedTextStart <= start && citation.revisedTextEnd >= end);
+    if (!covered) return true;
+  }
+  return false;
+}
+
+function handleTabKey<T extends string>(event: React.KeyboardEvent<HTMLButtonElement>, current: T, setCurrent: (value: T) => void) {
+  const tabs = Array.from(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []);
+  const currentIndex = tabs.indexOf(event.currentTarget);
+  if (currentIndex < 0 || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+  const next = tabs[nextIndex];
+  const value = next.id.split("-").at(-1) as T;
+  if (value !== current) setCurrent(value);
+  next.focus();
+}
+
+function RequiredMark({ language }: { language: Language }) {
+  return <span className="required-mark" title={translate(language, "requiredField")} aria-label={translate(language, "requiredField")}>*</span>;
+}
+
+function PreviousStepsSummary({ language, draft, claim, sources, support, decision }: { language: Language; draft: string; claim: string; sources: ResearchSource[]; support: string; decision: string }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  return <details className="previous-summary"><summary>{t("previousStepsSummary")}</summary><div><ReceiptSection label={t("progressDraft")} value={draft || "—"} />{claim && <ReceiptSection label={t("progressClaim")} value={claim} />}{sources.length > 0 && <ReceiptSection label={t("progressEvidence")} value={sources.map((item) => item.title).join(" · ")} />}{support && <ReceiptSection label={t("creatorAssessment")} value={support} />}{decision && <ReceiptSection label={t("editorialDecision")} value={decision} />}</div></details>;
+}
+
+function ReceiptDocument({ language, claim, sources, source, supportLabel, supportJustification, actionLabel, reflectionLabel, comparisonNotes, citations, checklist, pending, status, draft, revised, hasUnreferencedContext }: { language: Language; claim: Claim; sources: ResearchSource[]; source: ResearchSource; supportLabel: string; supportJustification: string; actionLabel: string; reflectionLabel: string; comparisonNotes: ComparisonNotes; citations: RevisionCitation[]; checklist: string[]; pending: boolean; status: SessionStatus; draft: string; revised: string; hasUnreferencedContext: boolean }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  const locale = language === "pt" ? "pt-BR" : "en-US";
+  return <article className="receipt-card" id="receipt"><div className="receipt-header"><div><span className="brand-mark"><span /></span><div><h2>{t("receiptTitle")}</h2><p>{t("receiptSubtitle")}</p></div></div><time>{new Intl.DateTimeFormat(locale).format(new Date())}</time></div><div className="receipt-metadata"><span>{t("receiptFieldLanguage")}: {language === "pt" ? "Português" : "English"}</span><span className={`receipt-status ${status}`}>{localizedStatus(language, status)}</span></div><ReceiptSection label={t("claimExamined")} value={`“${claim.text}”`} />{sources.map((item, index) => <section className="receipt-source" key={item.id}><header><span>{t("sourceConsulted")} {index + 1}</span><a href={item.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a></header><h3>{item.title}</h3><div className="receipt-source-grid"><ReceiptSection label={t("authorInstitution")} value={item.authorOrInstitution || "—"} /><ReceiptSection label={t("publishedDate")} value={item.publishedAt || "—"} /><ReceiptSection label={t("sourceType")} value={item.sourceType || "—"} /><ReceiptSection label={t("sourceOrigin")} value={t(item.provenance === "user" ? "userEdited" : item.provenance === "demo" ? "guidedSource" : "researchSource")} /><ReceiptSection label={t("methodology")} value={item.methodology || "—"} /><ReceiptSection label={t("sample")} value={item.sample || "—"} /><ReceiptSection label={t("geography")} value={item.geography || "—"} /><ReceiptSection label={t("keyFindings")} value={item.keyFindings || "—"} /><ReceiptSection label={t("measuredReported")} value={item.measuredOrReported} /><ReceiptSection label={t("doesNotEstablish")} value={item.doesNotEstablish} /><ReceiptSection label={t("contextLimitations")} value={item.contextLimitations} /><ReceiptSection label={t("relationship")} value={item.relationSummary} /><ReceiptSection label={t("accessDate")} value={item.accessedAt} /></div></section>)}<div className="receipt-decision"><ReceiptSection label={t("creatorAssessment")} value={supportLabel} /><ReceiptSection label={t("justificationLabel")} value={supportJustification} /><ReceiptSection label={t("editorialDecision")} value={actionLabel} /><ReceiptSection label={t("reflectionLabel")} value={reflectionLabel} /></div><ReceiptSection label={t("measuredReported")} value={source.measuredOrReported} /><ReceiptSection label={t("receiptComparison")} value={Object.values(comparisonNotes).filter((value) => value.trim()).join(" · ") || "—"} /><section className="receipt-traceability"><span>{t("receiptFieldCitations")}</span>{citations.length > 0 ? <ol>{citations.map((item) => <li className={item.broken ? "broken" : ""} key={item.id}>“{item.citedText}” — {sources.find((candidate) => candidate.id === item.sourceId)?.title || t("citationBroken")}{item.note ? ` · ${item.note}` : ""}</li>)}</ol> : <p>{t("noPassageReferences")}</p>}{hasUnreferencedContext && <p className="pending-inline">{t("contextWithoutReference")}</p>}</section><section className={`receipt-pending ${pending ? "has-pending" : ""}`}><ReceiptSection label={t("receiptFieldPending")} value={pending ? t("pendingRecorded") : t("noPendingRecorded")} /></section><ReceiptSection label={t("receiptFieldChecklist")} value={checklist.length === CHECKLIST_IDS.length ? t("yes") : t("no")} /><div className="receipt-change"><span>{t("changeMade")}</span><div><p>{draft}</p><i aria-hidden="true">→</i><p>{revised}</p></div></div><div className="receipt-disclaimer"><span aria-hidden="true">i</span><p><strong>{t("receiptDisclaimer")}</strong></p></div></article>;
 }
 
 function previewRevision(draft: string, claim: Claim, source: ResearchSource, action: EditorialAction, language: Language) {
@@ -581,7 +629,7 @@ function Header({ language, setLanguage, home, compact = false }: { language: La
 
 function Landing({ language, setLanguage, start, sessions, historyReady, resume, duplicate, remove, clear }: { language: Language; setLanguage: (value: Language) => void; start: (guided: boolean) => void; sessions: ReviewSession[]; historyReady: boolean; resume: (session: ReviewSession) => void; duplicate: (session: ReviewSession) => void; remove: (id: string) => void; clear: () => void }) {
   const t = (key: TranslationKey) => translate(language, key);
-  return <main className="app-shell home-page"><Header language={language} setLanguage={setLanguage} home={() => undefined} /><section className="hero"><div className="hero-copy"><p className="eyebrow"><span />{t("mediaLiteracy")}</p><h1><span>{t("pause")}</span><br />{t("checkEvidence")}<br /><em>{t("thenPost")}</em></h1><p className="hero-subtitle">{t("heroSubtitle")}</p><div className="hero-actions"><button className="primary-button" onClick={() => start(true)}>{t("tryDemo")}<span>→</span></button><button className="secondary-button" onClick={() => start(false)}>{t("reviewMine")}</button></div><div className="trust-row"><span>✓ {t("noAccount")}</span><span>✓ {t("noPermanentStorage")}</span><span>✓ {t("realSources")}</span></div></div><HeroVisual language={language} /></section><section className="review-paths" aria-label={t("inputMethod")}><article className="review-path demo"><span>{t("demoPathLabel")}</span><h2>{t("demoPathTitle")}</h2><p>{t("demoPathDescription")}</p></article><article className="review-path real"><span>{t("realPathLabel")}</span><h2>{t("realPathTitle")}</h2><p>{t("realPathDescription")}</p></article></section><p className="local-storage-note"><span>i</span>{t("localStorageDetail")}</p>{historyReady && <HistoryPanel language={language} sessions={sessions} resume={resume} duplicate={duplicate} remove={remove} clear={clear} />}<section className="proof-strip" id="why"><div className="stat-block"><strong>62<span>%</span></strong><p>{t("unescoStat")}</p></div><div className="source-block"><span>↗</span><div><strong>{t("unescoSurvey")}</strong><small>{t("humanDecision")}</small></div></div></section><section className="how-section" id="how"><div><p className="eyebrow"><span />{t("howItWorks")}</p><h2>{t("decisionCanChange")}</h2><p>{t("intervention")}</p></div><div className="step-row"><article><span>01</span><div className="step-symbol">“ ”</div><h3>{t("findClaim")}</h3></article><article><span>02</span><div className="step-symbol">⌕</div><h3>{t("examineSources")}</h3></article><article><span>03</span><div className="step-symbol">✓</div><h3>{t("makeDecision")}</h3></article></div></section></main>;
+  return <main className="app-shell home-page"><Header language={language} setLanguage={setLanguage} home={() => undefined} /><section className="hero"><div className="hero-copy"><p className="eyebrow"><span />{t("mediaLiteracy")}</p><h1><span>{t("pause")}</span><br />{t("checkEvidence")}<br /><em>{t("thenPost")}</em></h1><p className="hero-subtitle">{t("heroSubtitle")}</p><div className="hero-actions"><button className="primary-button" onClick={() => start(true)}>{t("tryDemo")}<span>→</span></button><button className="secondary-button" onClick={() => start(false)}>{t("reviewMine")}</button></div><div className="trust-row"><span>✓ {t("noAccount")}</span><span>✓ {t("noPermanentStorage")}</span><span>✓ {t("realSources")}</span></div></div><HeroVisual language={language} /></section><section className="review-paths" aria-label={t("inputMethod")}><article className="review-path demo"><span>{t("demoPathLabel")}</span><h2>{t("demoPathTitle")}</h2><p>{t("demoPathDescription")}</p><button className="secondary-button" onClick={() => start(true)}>{t("startDemoPath")} <span aria-hidden="true">→</span></button></article><article className="review-path real"><span>{t("realPathLabel")}</span><h2>{t("realPathTitle")}</h2><p>{t("realPathDescription")}</p><button className="primary-button" onClick={() => start(false)}>{t("startRealPath")} <span aria-hidden="true">→</span></button></article></section><p className="local-storage-note"><span aria-hidden="true">i</span>{t("localStorageDetail")}</p>{historyReady && <HistoryPanel language={language} sessions={sessions} resume={resume} duplicate={duplicate} remove={remove} clear={clear} />}<section className="proof-strip" id="why"><div className="stat-block"><strong>62<span>%</span></strong><p>{t("unescoStat")}</p></div><div className="source-block"><span aria-hidden="true">↗</span><div><strong>{t("unescoSurvey")}</strong><small>{t("humanDecision")}</small></div></div></section><section className="how-section" id="how"><div><p className="eyebrow"><span />{t("howItWorks")}</p><h2>{t("decisionCanChange")}</h2><p>{t("intervention")}</p></div><div className="step-row"><article><span>01</span><div className="step-symbol" aria-hidden="true">“ ”</div><h3>{t("findClaim")}</h3></article><article><span>02</span><div className="step-symbol" aria-hidden="true">⌕</div><h3>{t("examineSources")}</h3></article><article><span>03</span><div className="step-symbol" aria-hidden="true">✓</div><h3>{t("makeDecision")}</h3></article></div></section></main>;
 }
 
 function HeroVisual({ language }: { language: Language }) {
@@ -591,7 +639,7 @@ function HeroVisual({ language }: { language: Language }) {
 
 function Progress({ step, labels, language }: { step: number; labels: string[]; language: Language }) {
   const current = Math.min(step, 5);
-  return <div className="progress-wrap" aria-label={translate(language, "reviewProgress")}>{labels.map((label, index) => <div className="progress-fragment" key={label}><div className={`progress-label ${index + 1 <= current ? "done" : "muted"}`}><strong>{index + 1 < current ? "✓" : String(index + 1).padStart(2, "0")}</strong><span>{label}</span></div>{index < labels.length - 1 && <div className={`progress-line ${index + 1 < current ? "filled" : ""}`} />}</div>)}</div>;
+  return <div className="progress-wrap" role="list" aria-label={translate(language, "reviewProgress")}>{labels.map((label, index) => <div className="progress-fragment" role="listitem" aria-current={index + 1 === current ? "step" : undefined} key={label}><div className={`progress-label ${index + 1 <= current ? "done" : "muted"}`}><strong aria-hidden="true">{index + 1 < current ? "✓" : String(index + 1).padStart(2, "0")}</strong><span>{label}</span></div>{index < labels.length - 1 && <div aria-hidden="true" className={`progress-line ${index + 1 < current ? "filled" : ""}`} />}</div>)}</div>;
 }
 
 function StepIntro({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: string }) { return <section className="editor-intro"><p className="eyebrow"><span />{eyebrow}</p><h1>{title}</h1><p>{lead}</p></section>; }
@@ -617,25 +665,28 @@ function NarrationStatus({ state, language, voiceName, compact = false }: { stat
   return <p className={`narration-status ${compact ? "compact" : ""}`} role="status" aria-live="polite" title={voiceName ?? undefined}>{translate(language, key)}</p>;
 }
 
-function SourceEditor({ source, language, onChange }: { source: ResearchSource; language: Language; onChange: (field: SourceField, value: string) => void }) {
+function SourceEditor({ source, language, editedFields, onChange }: { source: ResearchSource; language: Language; editedFields: SourceField[]; onChange: (field: SourceField, value: string) => void }) {
   const t = (key: TranslationKey) => translate(language, key);
   const provenance = source.provenance === "user" ? t("userEdited") : source.provenance === "demo" ? t("guidedSource") : t("researchSource");
   const fields: Array<{ field: SourceField; key: TranslationKey; multiline?: boolean }> = [{ field: "title", key: "sourceTitle" }, { field: "authorOrInstitution", key: "authorInstitution" }, { field: "publishedAt", key: "publishedDate" }, { field: "sourceType", key: "sourceType" }, { field: "methodology", key: "methodology", multiline: true }, { field: "sample", key: "sample", multiline: true }, { field: "geography", key: "geography", multiline: true }, { field: "keyFindings", key: "keyFindings", multiline: true }, { field: "measuredOrReported", key: "measuredReported", multiline: true }, { field: "doesNotEstablish", key: "doesNotEstablish", multiline: true }, { field: "contextLimitations", key: "contextLimitations", multiline: true }, { field: "relationSummary", key: "relationSummary", multiline: true }, { field: "url", key: "sourceUrl" }, { field: "accessedAt", key: "accessDate" }];
-  return <article className="source-details source-editor"><div><span>{t("selectedSource")}</span><a href={source.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a></div><p className={`source-provenance ${source.provenance}`}>{provenance}</p><div className="source-form">{fields.map(({ field, key, multiline }) => <label key={field}>{t(key)}{multiline ? <textarea value={source[field]} onChange={(event) => onChange(field, event.target.value)} /> : <input type={field === "accessedAt" ? "date" : field === "url" ? "url" : "text"} value={source[field]} onChange={(event) => onChange(field, event.target.value)} placeholder={field === "authorOrInstitution" || field === "sourceType" ? t("unidentified") : undefined} />}</label>)}</div></article>;
+  const requiredFields: SourceField[] = ["title", "measuredOrReported", "url"];
+  return <article className="source-details source-editor"><div><span>{t("selectedSource")}</span><a href={source.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a></div><p className={`source-provenance ${source.provenance}`}>{provenance}</p><div className="source-form">{fields.map(({ field, key, multiline }) => <label key={field}>{t(key)} {requiredFields.includes(field) && <RequiredMark language={language} />}{editedFields.includes(field) && <small className="edited-field">{t("userCorrectedField")}</small>}{multiline ? <textarea required={requiredFields.includes(field)} value={source[field]} onChange={(event) => onChange(field, event.target.value)} /> : <input required={requiredFields.includes(field)} type={field === "accessedAt" ? "date" : field === "url" ? "url" : "text"} value={source[field]} onChange={(event) => onChange(field, event.target.value)} placeholder={field === "authorOrInstitution" || field === "sourceType" ? t("unidentified") : undefined} />}</label>)}</div></article>;
 }
 
 function HistoryPanel({ language, sessions, resume, duplicate, remove, clear }: { language: Language; sessions: ReviewSession[]; resume: (session: ReviewSession) => void; duplicate: (session: ReviewSession) => void; remove: (id: string) => void; clear: () => void }) {
   const t = (key: TranslationKey) => translate(language, key);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SessionStatus | "all">("all");
+  const [languageFilter, setLanguageFilter] = useState<Language | "all">("all");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const status = (value: SessionStatus) => t(value === "in_progress" ? "statusInProgress" : value === "completed" ? "statusCompleted" : "statusPending");
   const normalized = query.trim().toLocaleLowerCase(language === "pt" ? "pt-BR" : "en-US");
   const visible = sessions.filter((session) => {
     const claim = session.analysis?.claims.find((item) => item.id === session.selectedClaimId)?.text ?? "";
     const matchesText = !normalized || `${session.draft} ${claim}`.toLocaleLowerCase(language === "pt" ? "pt-BR" : "en-US").includes(normalized);
-    return matchesText && (filter === "all" || session.status === filter);
-  });
-  return <section className="history-panel"><div className="history-heading"><div><span className="section-icon">▤</span><div><h2>{t("historyTitle")}</h2><p>{t("historyLead")}</p></div></div><span className="local-badge">● {t("privateByDesign")}</span></div>{sessions.length === 0 ? <p className="history-empty">{t("noHistory")}</p> : <><div className="history-tools"><label><span>{t("historySearch")}</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("historySearchPlaceholder")} /></label><label><span>{t("historyFilter")}</span><select value={filter} onChange={(event) => setFilter(event.target.value as SessionStatus | "all")}><option value="all">{t("historyAll")}</option><option value="in_progress">{t("statusInProgress")}</option><option value="completed">{t("statusCompleted")}</option><option value="completed_with_pending">{t("statusPending")}</option></select></label></div>{visible.length === 0 ? <p className="history-empty">{t("noHistoryMatch")}</p> : <div className="history-list">{visible.map((session) => <article key={session.id}><div className="history-content"><div className="history-meta"><span className={`status-badge ${session.status}`}>{status(session.status)}</span><span>{session.language.toUpperCase()}</span><span>{translate(language, "historySources", { count: session.sources.length })}</span></div><strong>{session.draft.slice(0, 120) || "—"}</strong><small>{translate(language, "lastUpdated", { date: new Intl.DateTimeFormat(language === "pt" ? "pt-BR" : "en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(session.updatedAt)) })}</small></div><div className="history-actions"><button className="history-primary" onClick={() => resume(session)}>{t("continueSession")} →</button><button onClick={() => duplicate(session)}>{t("duplicateSession")}</button><button className="danger" onClick={() => remove(session.id)}>{t("deleteSession")}</button></div></article>)}</div>}<button className="text-button danger" onClick={clear}>{t("clearHistory")}</button></>}</section>;
+    return matchesText && (filter === "all" || session.status === filter) && (languageFilter === "all" || session.language === languageFilter);
+  }).sort((a, b) => sortOrder === "newest" ? b.updatedAt.localeCompare(a.updatedAt) : a.updatedAt.localeCompare(b.updatedAt));
+  return <section className="history-panel"><div className="history-heading"><div><span className="section-icon" aria-hidden="true">▤</span><div><h2>{t("historyTitle")}</h2><p>{t("historyLead")}</p></div></div><span className="local-badge">● {t("privateByDesign")}</span></div>{sessions.length === 0 ? <p className="history-empty">{t("noHistory")}</p> : <><div className="history-tools"><label><span>{t("historySearch")}</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("historySearchPlaceholder")} /></label><label><span>{t("historyFilter")}</span><select value={filter} onChange={(event) => setFilter(event.target.value as SessionStatus | "all")}><option value="all">{t("historyAll")}</option><option value="in_progress">{t("statusInProgress")}</option><option value="completed">{t("statusCompleted")}</option><option value="completed_with_pending">{t("statusPending")}</option></select></label><label><span>{t("historyLanguageFilter")}</span><select value={languageFilter} onChange={(event) => setLanguageFilter(event.target.value as Language | "all")}><option value="all">{t("historyAllLanguages")}</option><option value="pt">Português</option><option value="en">English</option></select></label><label><span>{t("historySort")}</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as "newest" | "oldest")}><option value="newest">{t("historyNewest")}</option><option value="oldest">{t("historyOldest")}</option></select></label></div>{visible.length === 0 ? <p className="history-empty">{t("noHistoryMatch")}</p> : <div className="history-list">{visible.map((session) => { const savedClaim = session.analysis?.claims.find((item) => item.id === session.selectedClaimId)?.text; return <article key={session.id}><div className="history-content"><div className="history-meta"><span className={`status-badge ${session.status}`}>{status(session.status)}</span><span>{session.language.toUpperCase()}</span><span>{translate(language, "historySources", { count: session.sources.length })}</span></div><strong>{savedClaim || session.draft.slice(0, 120) || "—"}</strong>{savedClaim && <p>{session.draft.slice(0, 140)}</p>}<small>{translate(language, "lastUpdated", { date: new Intl.DateTimeFormat(language === "pt" ? "pt-BR" : "en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(session.updatedAt)) })}</small></div><div className="history-actions"><button className="history-primary" onClick={() => resume(session)}>{t("continueSession")} →</button><button onClick={() => duplicate(session)}>{t("duplicateSession")}</button><button className="danger" onClick={() => remove(session.id)}>{t("deleteSession")}</button></div></article>; })}</div>}<button className="text-button danger" onClick={clear}>{t("clearHistory")}</button></>}</section>;
 }
 
 function SourceComparison({ sources, language, notes, onChange }: { sources: ResearchSource[]; language: Language; notes: ComparisonNotes; onChange: (field: keyof ComparisonNotes, value: string) => void }) {
@@ -648,13 +699,14 @@ function SourceComparison({ sources, language, notes, onChange }: { sources: Res
     { key: "geography", value: (item) => item.geography }, { key: "measuredReported", value: (item) => item.measuredOrReported },
     { key: "keyFindings", value: (item) => item.keyFindings }, { key: "contextLimitations", value: (item) => item.contextLimitations },
     { key: "doesNotEstablish", value: (item) => item.doesNotEstablish }, { key: "relationSummary", value: (item) => item.relationSummary },
+    { key: "sourceUrl", value: (item) => item.url },
     { key: "sourceOrigin", value: (item) => t(item.provenance === "user" ? "userEdited" : item.provenance === "demo" ? "guidedSource" : "researchSource") },
     { key: "accessDate", value: (item) => item.accessedAt },
   ];
   return <section className="comparison-panel"><div className="section-heading"><span className="section-icon">⇄</span><div><h2>{t("comparisonTitle")}</h2><p>{t("comparisonHelp")}</p></div></div><div className="comparison-table" role="region" tabIndex={0} aria-label={t("comparisonTitle")}><table><thead><tr><th>{t("comparisonField")}</th>{sources.map((item, index) => <th key={item.id}><span>{translate(language, "comparisonSource", { count: index + 1 })}</span><a href={item.url} target="_blank" rel="noreferrer">{item.title}</a></th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.key}><th scope="row">{t(row.key)}</th>{sources.map((item) => <td key={item.id}>{row.value(item) || "—"}</td>)}</tr>)}</tbody></table></div><div className="comparison-mobile">{sources.map((item, index) => <article key={item.id}><span>{translate(language, "comparisonSource", { count: index + 1 })}</span><h3>{item.title}</h3><a href={item.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a>{rows.slice(1).map((row) => <div key={row.key}><strong>{t(row.key)}</strong><p>{row.value(item) || "—"}</p></div>)}</article>)}</div><div className="comparison-notes">{fields.map(({ field, key }) => <label key={field}><span>{t(key)}</span><textarea value={notes[field]} onChange={(event) => onChange(field, event.target.value)} /></label>)}</div></section>;
 }
 
-function CitationPreview({ language, text, sources, citations }: { language: Language; text: string; sources: ResearchSource[]; citations: RevisionCitation[] }) {
+function CitationPreview({ language, text, sources, citations, hasUnreferencedContext }: { language: Language; text: string; sources: ResearchSource[]; citations: RevisionCitation[]; hasUnreferencedContext: boolean }) {
   const t = (key: TranslationKey, values?: Record<string, string | number>) => translate(language, key, values);
   const groups = new Map<string, RevisionCitation[]>();
   citations.filter((item) => !item.broken).forEach((item) => {
@@ -673,18 +725,19 @@ function CitationPreview({ language, text, sources, citations }: { language: Lan
     cursor = citation.revisedTextEnd;
   });
   if (cursor < text.length) parts.push(<span key={`plain-${cursor}`}>{text.slice(cursor)}</span>);
-  return <div className="citation-preview"><span>{t("citationPreview")}</span><p>{t("citationPreviewHelp")}</p><div>{parts.length ? parts : text}</div>{citations.length === 0 && <small>{t("contextWithoutReference")}</small>}</div>;
+  const usedSourceIds = new Set(citations.filter((item) => !item.broken).map((item) => item.sourceId));
+  return <div className="citation-preview"><span>{t("citationPreview")}</span><p>{t("citationPreviewHelp")}</p><div>{parts.length ? parts : text}</div>{usedSourceIds.size > 0 && <ul className="citation-legend" aria-label={t("citationLegend")}>{sources.filter((item) => usedSourceIds.has(item.id)).map((item, index) => <li key={item.id}><i aria-hidden="true">{index + 1}</i><a href={item.url} target="_blank" rel="noreferrer">{item.title}</a></li>)}</ul>}{hasUnreferencedContext && <small>{t("contextWithoutReference")}</small>}</div>;
 }
 
-function CitationEditor({ language, sources, citations, sourceId, note, error, onSource, onNote, onAdd, onRemove }: { language: Language; sources: ResearchSource[]; citations: RevisionCitation[]; sourceId: string; note: string; error: string; onSource: (id: string) => void; onNote: (value: string) => void; onAdd: () => void; onRemove: (id: string) => void }) {
+function CitationEditor({ language, sources, citations, sourceIds, note, error, onSources, onNote, onAdd, onRemove }: { language: Language; sources: ResearchSource[]; citations: RevisionCitation[]; sourceIds: string[]; note: string; error: string; onSources: (ids: string[]) => void; onNote: (value: string) => void; onAdd: () => void; onRemove: (id: string) => void }) {
   const t = (key: TranslationKey) => translate(language, key);
-  return <section className="citation-card"><h2>{t("citationsTitle")}</h2><p>{t("citationHelp")}</p><div className="citation-form"><label>{t("citationSource")}<select value={sourceId} onChange={(event) => onSource(event.target.value)}><option value="">—</option>{sources.map((item) => <option value={item.id} key={item.id}>{item.title}</option>)}</select></label><label>{t("citationNote")}<input value={note} onChange={(event) => onNote(event.target.value)} /></label><button className="secondary-button" onClick={onAdd}>{t("addCitation")}</button></div>{error && <p className="field-error" role="alert">{error}</p>}<ul>{citations.map((item) => <li className={item.broken ? "broken" : ""} key={item.id}><span>“{item.citedText}” — {sources.find((source) => source.id === item.sourceId)?.title || t("citationBroken")}</span><button onClick={() => onRemove(item.id)}>{t("removeCitation")}</button></li>)}</ul>{citations.length === 0 && <p>{t("contextWithoutReference")}</p>}</section>;
+  return <section className="citation-card"><h2>{t("citationsTitle")}</h2><p>{t("citationHelp")}</p><div className="citation-form"><fieldset><legend>{t("citationSource")} <RequiredMark language={language} /></legend>{sources.map((item) => <label key={item.id}><input type="checkbox" checked={sourceIds.includes(item.id)} onChange={(event) => onSources(event.target.checked ? [...sourceIds, item.id] : sourceIds.filter((id) => id !== item.id))} />{item.title}</label>)}</fieldset><label>{t("citationNote")}<input value={note} onChange={(event) => onNote(event.target.value)} /></label><button className="secondary-button" onClick={onAdd}>{t("addCitation")}</button></div>{error && <p className="field-error" role="alert">{error}</p>}<ul>{citations.map((item) => { const citedSource = sources.find((source) => source.id === item.sourceId); return <li className={item.broken ? "broken" : ""} key={item.id}><span>“{item.citedText}” — {item.broken ? t("citationBroken") : citedSource?.title || t("citationBroken")}{item.note ? ` · ${item.note}` : ""}</span><span>{citedSource && <a href={citedSource.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a>}<button onClick={() => onRemove(item.id)}>{t("removeCitation")}</button></span></li>; })}</ul>{citations.length === 0 && <p>{t("contextWithoutReference")}</p>}</section>;
 }
 
 function Checklist({ language, checked, toggle }: { language: Language; checked: string[]; toggle: (id: string) => void }) {
   const t = (key: TranslationKey) => translate(language, key);
   const items: Array<{ id: typeof CHECKLIST_IDS[number]; key: TranslationKey }> = [{ id: "opened", key: "checklistOpenedSource" }, { id: "identity", key: "checklistIdentity" }, { id: "date", key: "checklistDate" }, { id: "method", key: "checklistMethod" }, { id: "limitation", key: "checklistLimitation" }, { id: "scope", key: "checklistScope" }, { id: "final", key: "checklistFinalText" }];
-  return <section className="checklist-card"><h2>{t("checklistTitle")}</h2><p>{t("checklistLead")}</p>{items.map((item) => <label key={item.id}><input type="checkbox" checked={checked.includes(item.id)} onChange={() => toggle(item.id)} />{t(item.key)}</label>)}</section>;
+  return <section className="checklist-card"><h2>{t("checklistTitle")} <RequiredMark language={language} /></h2><p>{t("checklistLead")}</p>{items.map((item) => <label key={item.id}><input type="checkbox" checked={checked.includes(item.id)} onChange={() => toggle(item.id)} />{t(item.key)}</label>)}</section>;
 }
 
 function ReceiptSection({ label, value }: { label: string; value: string }) { return <div className="receipt-section"><span>{label}</span><p>{value}</p></div>; }
