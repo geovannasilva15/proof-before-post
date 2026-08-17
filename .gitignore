@@ -1,5 +1,6 @@
 # dependencies
 /node_modules
+/.npm-cache
 
 # Next.js build output
 /.next
@@ -8,6 +9,8 @@
 # production output
 /build
 /dist
+/test-results
+/playwright-report
 
 # local files
 .DS_Store
