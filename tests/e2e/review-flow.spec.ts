@@ -14,13 +14,13 @@ async function completeGuidedReview(page: Page, language: "pt" | "en") {
   await page.getByRole("button", { name: language === "pt" ? "Reduzi o alcance da afirmação" : "I narrowed the scope of the claim" }).click();
   await expect(page.locator(".citation-preview mark")).toBeVisible();
   if (language === "pt") {
-    const revised = page.getByLabel("Versão revisada");
+    const revised = page.getByRole("textbox", { name: "Versão revisada" });
     await revised.click();
     await revised.press("Control+Home");
     for (let index = 0; index < 12; index += 1) await revised.press("Shift+ArrowRight");
-    await page.locator(".citation-form select").selectOption("unesco-press-release-2024");
-    await page.locator(".citation-form input").fill("Conferido na fonte original.");
-    await page.getByRole("button", { name: "Associar fonte ao trecho" }).click();
+    await page.locator(".citation-form fieldset input").check();
+    await page.locator(".citation-form > label input").fill("Conferido na fonte original.");
+    await page.getByRole("button", { name: "Associar fontes ao trecho" }).click();
     await expect(page.locator(".citation-card li")).toHaveCount(2);
   }
   await page.getByRole("button", { name: language === "pt" ? "Gerar versão traduzida" : "Generate translated version", exact: true }).click();
@@ -80,6 +80,9 @@ test("desktop, mobile, PT/EN, Unicode, history, security and exports", async ({ 
   await expect(page.getByText(value)).toBeVisible();
 
   await page.getByRole("button", { name: "Review my own draft" }).click();
+  await page.getByRole("tab", { name: "Paste text" }).focus();
+  await page.getByRole("tab", { name: "Paste text" }).press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Import from URL" })).toHaveAttribute("aria-selected", "true");
   await page.getByRole("tab", { name: "Import from URL" }).click();
   await page.locator("#publication-url").fill("http://127.0.0.1/private");
   await page.getByRole("button", { name: "Extract content" }).click();
@@ -102,7 +105,7 @@ test("all five editorial actions change only the selected claim", async ({ page 
   for (const item of cases) {
     await page.getByRole("button", { name: item.action }).click();
     await page.getByRole("button", { name: /Revisar o conteúdo/ }).click();
-    const revised = page.getByLabel("Versão revisada");
+    const revised = page.getByRole("textbox", { name: "Versão revisada" });
     await expect(revised).toHaveValue(item.expected);
     await expect(revised).toHaveValue(/Segundo a pesquisa|Criadores são menos confiáveis|PENDENTE DE EVIDÊNCIA/);
     if (item.absent) await expect(revised).not.toHaveValue(item.absent);
@@ -140,6 +143,8 @@ test("local history can be saved, searched, filtered and resumed", async ({ page
   await page.getByLabel("Filtrar por status").selectOption("completed");
   await expect(page.getByText("Nenhuma revisão corresponde a esta busca.")).toBeVisible();
   await page.getByLabel("Filtrar por status").selectOption("in_progress");
+  await page.getByLabel("Filtrar por idioma").selectOption("pt");
+  await page.getByLabel("Ordenar por atualização").selectOption("oldest");
   await page.getByRole("button", { name: /Continuar/ }).click();
   await expect(page.getByLabel("Seu rascunho")).toHaveValue(draftText);
 });
@@ -182,6 +187,11 @@ test("three sources are compared on desktop and as cards on mobile", async ({ pa
   await page.getByRole("button", { name: /Examinar esta afirmação/ }).click();
   await expect(page.locator(".comparison-table thead th")).toHaveCount(4);
   await expect(page.locator(".comparison-table")).toBeVisible();
+  await page.getByRole("button", { name: /Fonte verificável 2/ }).click();
+  await page.getByLabel("URL da fonte").fill("https://example.com/source-1/");
+  await expect(page.getByText("Remova a fonte duplicada antes de continuar.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Continuar para a decisão/ })).toBeDisabled();
+  await page.getByLabel("URL da fonte").fill("https://example.com/source-2");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".comparison-mobile article")).toHaveCount(3);
   await expect(page.locator(".comparison-mobile")).toBeVisible();
