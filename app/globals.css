@@ -20,6 +20,17 @@
   --radius-lg: 24px;
   --shadow-sm: 0 8px 24px rgba(16, 30, 59, .06);
   --shadow-md: 0 22px 60px rgba(16, 30, 59, .10);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --content-wide: 1180px;
+  --content-reading: 760px;
+  --text-caption: 12px;
+  --text-body: 16px;
+  --text-lead: 18px;
   --font-geist-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-geist-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
@@ -27,7 +38,7 @@
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-geist-sans), Arial, sans-serif; }
-button, textarea, input { font: inherit; }
+button, textarea, input, select { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 3px solid rgba(49,46,170,.42); outline-offset: 3px; }
 
@@ -584,4 +595,113 @@ body { background: linear-gradient(180deg, #f9faff 0, #f5f7fd 48%, #f8faff 100%)
   .receipt-header { align-items: flex-start; gap: 12px; }
   .receipt-header time { font-size: 11px; }
   .receipt-section > p, .receipt-two p, .receipt-two a, .receipt-change p, .receipt-disclaimer p { font-size: 14px; }
+}
+
+/* Accessible editorial controls and document details */
+.required-mark { margin-left: 2px; color: var(--danger); font-size: 1em; font-weight: 900; }
+.edited-field { display: inline-flex; width: fit-content; margin-left: auto; padding: 3px 7px; border-radius: 999px; background: var(--success-soft); color: var(--success); font-size: 12px; font-weight: 750; text-transform: none; letter-spacing: 0; }
+.source-form label { position: relative; }
+.source-form label:has(.edited-field) { border-left: 3px solid var(--aqua); padding-left: 10px; }
+.support-justification small { display: block; margin-top: 7px; color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.45; }
+
+.previous-summary { width: min(1050px, calc(100% - 48px)); margin: 16px auto 0; border: 1px solid var(--line); border-radius: var(--radius-md); background: rgba(255,255,255,.86); box-shadow: var(--shadow-sm); }
+.previous-summary summary { min-height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; color: var(--indigo-dark); font-size: 14px; font-weight: 760; cursor: pointer; list-style: none; }
+.previous-summary summary::after { content: "+"; font-size: 21px; font-weight: 500; }
+.previous-summary[open] summary::after { content: "−"; }
+.previous-summary > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); }
+.previous-summary .receipt-section { margin: 0; padding: 16px 18px; border-bottom: 1px solid #edf0f6; }
+
+.history-tools { grid-template-columns: minmax(240px, 1.4fr) repeat(3, minmax(150px, .7fr)); }
+.history-tools label { font-size: 13px; }
+.history-content > strong { font-size: 16px; }
+.history-content > p { margin: 7px 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.history-meta { font-size: 12px; }
+.history-content > small { font-size: 12px; }
+
+.comparison-table table { font-size: 14px; }
+.comparison-table thead th span { font-size: 12px; }
+.comparison-notes label, .citation-form label, .citation-form legend { font-size: 14px; }
+.comparison-notes textarea { font-size: 16px; }
+.comparison-mobile article > span, .comparison-mobile strong, .comparison-mobile a { font-size: 13px; }
+.comparison-mobile p { font-size: 15px; }
+
+.citation-preview > span { font-size: 12px; }
+.citation-preview > p { font-size: 14px; }
+.citation-legend { display: grid; gap: 8px; margin: 16px 0 0; padding: 0; list-style: none; }
+.citation-legend li { display: flex; align-items: center; gap: 10px; }
+.citation-legend i { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; background: #dcd9ff; color: #18134d; font-style: normal; font-size: 12px; font-weight: 800; }
+.citation-legend a { color: #e8e7ff; font-size: 14px; }
+.citation-form fieldset { min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.citation-form fieldset label { display: flex; align-items: flex-start; gap: 9px; margin-top: 8px; color: var(--ink); font-weight: 600; line-height: 1.4; }
+.citation-form fieldset input { width: 20px; height: 20px; flex: 0 0 20px; }
+.citation-card li { display: flex; justify-content: space-between; gap: 16px; font-size: 14px; }
+.citation-card li > span:last-child { display: flex; align-items: center; gap: 10px; }
+.citation-card li a { color: var(--indigo); font-weight: 700; }
+
+.receipt-metadata { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 20px 27px 0; }
+.receipt-metadata > span:first-child { padding: 7px 10px; border-radius: 999px; background: #f0f2f8; color: #4d5a72; font-size: 13px; font-weight: 750; }
+.receipt-metadata .receipt-status { margin: 0; font-size: 13px; }
+.receipt-source { margin: 0 27px 20px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: #fbfcff; }
+.receipt-source > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; background: #f2f1ff; }
+.receipt-source > header span { color: var(--indigo); font-size: 13px; font-weight: 800; letter-spacing: .08em; }
+.receipt-source > header a { color: var(--indigo-dark); font-size: 14px; font-weight: 750; }
+.receipt-source > h3 { margin: 0; padding: 18px 18px 0; font-size: 19px; line-height: 1.4; }
+.receipt-source-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.receipt-source-grid .receipt-section { margin: 0; padding: 16px 18px; border-bottom: 1px solid #e8ebf3; }
+.receipt-decision { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 27px 20px; overflow: hidden; border: 1px solid #dcd9ff; border-radius: 16px; background: #f7f6ff; }
+.receipt-decision .receipt-section { margin: 0; padding: 18px; }
+.receipt-traceability, .receipt-pending { margin: 0 27px 20px; padding: 18px; border: 1px solid var(--line); border-radius: 15px; }
+.receipt-traceability > span { color: var(--indigo); font-size: 13px; font-weight: 800; letter-spacing: .08em; }
+.receipt-traceability ol { padding-left: 22px; }
+.receipt-traceability li, .receipt-traceability p { font-size: 15px; line-height: 1.55; }
+.receipt-traceability li.broken { color: var(--danger); }
+.receipt-traceability .pending-inline { padding: 10px 12px; border-radius: 10px; background: var(--warning-soft); color: #7a5100; font-weight: 700; }
+.receipt-pending.has-pending { border-color: #f0cf88; background: var(--warning-soft); }
+.receipt-section > span, .receipt-two span, .receipt-change > span { font-size: 13px; }
+.receipt-section > p, .receipt-two p, .receipt-two a, .receipt-change p { font-size: 15px; }
+.receipt-disclaimer p { font-size: 14px; }
+.receipt-actions p { font-size: 14px; }
+
+.local-badge, .review-path > span, .progress-label span, .save-bar, .history-heading p, .section-heading p { font-size: 13px; }
+.primary-button, .secondary-button, .text-button { min-height: 44px; }
+button, a, input[type="checkbox"] { touch-action: manipulation; }
+
+/* Keep working copy legible at normal size and at 200% zoom. */
+nav a, .primary-button, .secondary-button { font-size: 15px; }
+.privacy-pill, .trust-row, .eyebrow, .card-top, .claim-callout small, .receipt-mini small,
+.source-block strong, .source-block small, .step-row article > span, .progress-label strong,
+.draft-card label, .draft-meta, .analysis-error strong, .translation-notice p,
+.narration-status, .research-banner p, .research-banner > button, .claim-reason small,
+.source-heading p, .source-details a, .source-byline, .primary-source, .field-error,
+.diff-legend, .receipt-header p, .receipt-header time { font-size: 12px; }
+.next-card li, .analysis-error p, .analysis-error button, .claim-reason p,
+.claim-question p, .source-details dd, .source-notes textarea, .guided-questions,
+.decision-grid p, .decision-grid small, .responsibility-note p, .revised-preview,
+.traceability-note, .reflection-card button { font-size: 13px; }
+.small-note, .human-note { font-size: 12px; }
+.source-form label, .url-import-card > label, .translation-card label { font-size: 12px; }
+.source-form input, .source-form textarea, .support-options button,
+.support-justification textarea, .input-tabs button { font-size: 15px; }
+.narration-controls button, .text-button { font-size: 13px; }
+.history-panel p, .comparison-panel > p, .citation-card > p,
+.checklist-card > p, .translation-card p, .pending-card p,
+.checklist-card label, .pending-card label { font-size: 14px; }
+.decision-grid h3 { font-size: 16px; }
+
+@media (max-width: 1100px) {
+  .history-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .previous-summary > div, .receipt-source-grid, .receipt-decision { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+  input, textarea, select { font-size: 16px !important; }
+  .previous-summary { width: calc(100% - 30px); }
+  .history-tools { grid-template-columns: 1fr; }
+  .citation-card li { align-items: flex-start; flex-direction: column; }
+  .citation-card li > span:last-child { width: 100%; justify-content: space-between; }
+  .receipt-source, .receipt-decision, .receipt-traceability, .receipt-pending { margin-left: 16px; margin-right: 16px; }
+  .receipt-metadata { margin-left: 16px; margin-right: 16px; }
 }
