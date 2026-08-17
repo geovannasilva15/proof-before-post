@@ -29,12 +29,12 @@ The Evidence Receipt documents the creator's verification process. It does **not
 - Free-draft review with up to three evidence-sensitive claims.
 - Portuguese and English interface.
 - Complete localized flow, including demo content, accessibility labels and receipt export.
-- Editable source metadata with clear research, demo and user-edited provenance.
+- Editable source metadata with clear research, demo and user-edited provenance, field-level correction markers, URL validation and duplicate-source prevention.
 - Human-controlled evidence assessment with a required justification.
 - Five editorial actions that produce distinct, editable draft revisions.
 - Original-versus-revised comparison with removed, added and unresolved highlights.
-- Source-to-revision traceability.
-- Private, browser-only review history with search, status filters, resume, duplicate and delete controls.
+- Source-to-revision traceability that can associate one passage with multiple sources and flags broken associations or added context without a reference.
+- Private, browser-only review history with search, status and language filters, update sorting, resume, duplicate and delete controls.
 - Structured source comparison without a truth score, presented as a table on desktop and source cards on mobile.
 - Visual passage-level citation preview that never inserts hidden markers into copied text.
 - Safe public-URL import with SSRF, redirect, size and timeout controls.
@@ -45,6 +45,8 @@ The Evidence Receipt documents the creator's verification process. It does **not
 - Unicode-aware 1,500-character counting, including emoji and combined characters.
 - Responsive layout, keyboard navigation and reduced-motion support.
 - No account or database required for visitors.
+
+Existing version 1 browser sessions are migrated in place to the current local format without changing the storage key or discarding review content.
 
 ## Ethical guardrails
 
