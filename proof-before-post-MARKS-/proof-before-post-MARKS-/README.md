@@ -14,11 +14,11 @@ Source: [UNESCO — 2/3 of digital content creators do not check their facts bef
 
 ## Product flow
 
-1. Paste a caption, script or post, or import a public URL after reviewing the extracted preview.
+1. Paste a caption, script or post.
 2. Select one claim that deserves attention.
-3. Select up to three sources and confirm or correct title, institution, date, methodology, sample, scope and limitations.
-4. Record a human evidence assessment and editorial decision.
-5. Revise only the examined passage, associate sources with added passages, complete the checklist and generate a publication summary.
+3. Examine the source, its scope and its context.
+4. Decide whether to correct, contextualize, remove, keep transparently or seek stronger evidence.
+5. Revise the draft and generate an Evidence Receipt.
 
 The Evidence Receipt documents the creator's verification process. It does **not** certify that the content is true.
 
@@ -27,31 +27,16 @@ The Evidence Receipt documents the creator's verification process. It does **not
 - Live web research with verifiable source links.
 - Guided UNESCO demonstration that remains available without the research service.
 - Free-draft review with up to three evidence-sensitive claims.
-- Per-claim evidence relationship map (`supports`, `contextualizes`, `contradicts`, or `inconclusive`) without an automated truth verdict.
-- Explicit evidence-gap prompts that keep missing proof visible before publication.
-- Source verifiability checkpoints for identity, date, method and scope, presented as completeness checks rather than a credibility score.
-- A final readiness panel that summarizes sources, passage references, checklist completion and unresolved evidence before export.
-- A transparent methodology section explaining what the tool organizes and what it deliberately does not decide.
 - Portuguese and English interface.
 - Complete localized flow, including demo content, accessibility labels and receipt export.
-- Editable source metadata with clear research, demo and user-edited provenance.
-- Human-controlled evidence assessment with a required justification.
-- Five editorial actions that produce distinct, editable draft revisions.
-- Original-versus-revised comparison with removed, added and unresolved highlights.
-- Source-to-revision traceability.
-- Private, browser-only review history with search, status filters, resume, duplicate and delete controls.
-- Structured source comparison without a truth score, presented as a table on desktop and source cards on mobile.
-- Visual passage-level citation preview that never inserts hidden markers into copied text.
-- Safe public-URL import with SSRF, redirect, size and timeout controls.
-- Separate, editable translated copy that preserves the original text.
-- Completion checklist and explicit unresolved-evidence status.
-- Complete publication summary as selectable-text PDF, PNG and copyable text.
-- Language-aware browser narration with play, pause, resume and stop controls.
+- Human-controlled evidence assessment and editorial decision.
+- Original-versus-revised draft comparison.
+- Evidence Receipt download as PNG.
+- Copyable receipt summary.
+- Language-aware browser narration for questions and research context, with clear feedback when the selected voice is unavailable.
 - Unicode-aware 1,500-character counting, including emoji and combined characters.
 - Responsive layout, keyboard navigation and reduced-motion support.
 - No account or database required for visitors.
-
-Existing version 1 browser sessions are migrated in place to the current local format without changing the storage key or discarding review content.
 
 ## Ethical guardrails
 
@@ -70,12 +55,11 @@ Proof Before Post can organize questions and make possible evidence gaps visible
 - React 19
 - TypeScript
 - CSS
-- Canvas API and jsPDF for receipt export
-- Playwright for browser-level regression testing
+- Canvas API for receipt export
 - Web Speech API for question playback
 - OpenAI Responses API with web search for live, sourced research
 
-Real review sessions are saved only in the visitor's browser so work can be resumed. The visitor can delete one session or all local data; guided demonstrations are never mixed into this history. During live research, the current draft is sent to the server-side analysis route and the configured research service for that request. The repository never contains the API key: the credential is read only by the server-side research and translation routes from `OPENAI_API_KEY`.
+Drafts are not stored permanently. During live research, the current draft is sent to the server-side analysis route and the configured research service for that request. The repository never contains the API key: the credential is read only by the server route from `OPENAI_API_KEY`.
 
 ## Run locally
 
@@ -84,7 +68,6 @@ Requirements: Node.js 20.9 or newer and npm.
 ```bash
 npm install
 npm run check
-npm run test:e2e
 npm run dev
 ```
 
@@ -96,14 +79,14 @@ Open [http://localhost:3000](http://localhost:3000).
 npm run check
 ```
 
-`npm run check` runs ESLint, TypeScript validation, product and behavior tests, and a production build. `npm run test:e2e` builds the application and runs the Playwright browser regression suite; install a Playwright Chromium browser in a standard local or CI environment first.
+This command runs TypeScript validation, product guardrail tests and a production build.
 
 ## Deploy on Vercel
 
 1. Import this repository into Vercel.
 2. Keep the detected framework as **Next.js**.
 3. Add `OPENAI_API_KEY` as a server-side environment variable.
-4. Optionally set `OPENAI_MODEL`; the default is `gpt-5.6`.
+4. Optionally set `OPENAI_MODEL`; the default is `gpt-5.5`.
 5. Select **Deploy**.
 
 Do not prefix the key with `NEXT_PUBLIC_`. A `NEXT_PUBLIC_` variable would expose the value to visitors' browsers.
@@ -115,40 +98,21 @@ proof-before-post/
 ├── .github/workflows/ci.yml
 ├── app/
 │   ├── api/analyze/route.ts
-│   ├── api/extract/route.ts
-│   ├── api/translate/route.ts
 │   ├── globals.css
 │   ├── layout.tsx
 │   └── page.tsx
-├── data/guided-demo.json
 ├── hooks/
-│   ├── useNarrator.ts
-│   └── useReviewHistory.ts
+│   └── useNarrator.ts
 ├── lib/
 │   ├── analysis.ts
-│   ├── i18n.ts
-│   ├── rate-limit.ts
-│   ├── receipt.ts
-│   ├── revision.ts
-│   ├── session.ts
 │   └── text.ts
-├── public/favicon.svg
-├── scripts/
-│   ├── dev-e2e.mjs
-│   └── dev.mjs
+├── public/
+│   └── favicon.svg
 ├── tests/
-│   ├── e2e/review-flow.spec.ts
-│   ├── product-guardrails.test.mjs
-│   └── unicode-character-count.test.mjs
-├── .env.example
-├── .gitignore
-├── .nvmrc
-├── eslint.config.mjs
+│   └── product-guardrails.test.mjs
 ├── LICENSE
-├── next-env.d.ts
-├── package-lock.json
+├── next.config.ts
 ├── package.json
-├── playwright.config.ts
 └── tsconfig.json
 ```
 
