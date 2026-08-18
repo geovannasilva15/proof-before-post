@@ -16,7 +16,7 @@ export function useNarrator(language: Language) {
 
   useEffect(() => {
     if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
-      setState("unsupported");
+      queueMicrotask(() => setState("unsupported"));
       return;
     }
 
@@ -39,10 +39,6 @@ export function useNarrator(language: Language) {
       ?? voices.find((item) => item.lang.toLowerCase().startsWith(base))
       ?? null;
   }, [language, voices]);
-
-  useEffect(() => {
-    if (voice && state === "unavailable") setState("idle");
-  }, [state, voice]);
 
   const speak = useCallback((text: string) => {
     if (!text.trim()) return;
@@ -78,5 +74,17 @@ export function useNarrator(language: Language) {
     setState("idle");
   }, []);
 
-  return { state, speak, stop, voiceName: voice?.name ?? null };
+  const pause = useCallback(() => {
+    if (!("speechSynthesis" in window) || !window.speechSynthesis.speaking) return;
+    window.speechSynthesis.pause();
+    setState("paused");
+  }, []);
+
+  const resume = useCallback(() => {
+    if (!("speechSynthesis" in window) || !window.speechSynthesis.paused) return;
+    window.speechSynthesis.resume();
+    setState("speaking");
+  }, []);
+
+  return { state, speak, pause, resume, stop, voiceName: voice?.name ?? null };
 }

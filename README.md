@@ -51,6 +51,8 @@ The Evidence Receipt documents the creator's verification process. It does **not
 - Responsive layout, keyboard navigation and reduced-motion support.
 - No account or database required for visitors.
 
+Existing version 1 browser sessions are migrated in place to the current local format without changing the storage key or discarding review content.
+
 ## Ethical guardrails
 
 Proof Before Post can organize questions and make possible evidence gaps visible. It does not:

@@ -6,10 +6,19 @@ export type ResearchSource = {
   id: string;
   title: string;
   url: string;
-  publisher: string;
+  authorOrInstitution: string;
   publishedAt: string;
-  excerpt: string;
-  relevance: string;
+  sourceType: string;
+  methodology: string;
+  sample: string;
+  geography: string;
+  keyFindings: string;
+  measuredOrReported: string;
+  doesNotEstablish: string;
+  contextLimitations: string;
+  relationSummary: string;
+  accessedAt: string;
+  provenance: "research" | "user" | "demo";
 };
 
 export type Claim = {
@@ -36,6 +45,9 @@ export type AnalysisErrorCode =
   | "INVALID_REQUEST"
   | "NO_VERIFIABLE_CLAIMS"
   | "NO_VERIFIED_SOURCES"
+  | "RATE_LIMITED"
+  | "TIMEOUT"
+  | "INVALID_RESPONSE"
   | "UPSTREAM_ERROR";
 
 export type AnalysisErrorPayload = {
@@ -90,10 +102,19 @@ export function validateAnalysisResult(value: unknown): value is AnalysisResult 
       typeof source.id !== "string" ||
       typeof source.title !== "string" ||
       !isHttpsUrl(source.url) ||
-      typeof source.publisher !== "string" ||
+      typeof source.authorOrInstitution !== "string" ||
       typeof source.publishedAt !== "string" ||
-      typeof source.excerpt !== "string" ||
-      typeof source.relevance !== "string"
+      typeof source.sourceType !== "string" ||
+      typeof source.methodology !== "string" ||
+      typeof source.sample !== "string" ||
+      typeof source.geography !== "string" ||
+      typeof source.keyFindings !== "string" ||
+      typeof source.measuredOrReported !== "string" ||
+      typeof source.doesNotEstablish !== "string" ||
+      typeof source.contextLimitations !== "string" ||
+      typeof source.relationSummary !== "string" ||
+      typeof source.accessedAt !== "string" ||
+      !["research", "user", "demo"].includes(source.provenance)
     ) return false;
     sourceIds.add(source.id);
   }

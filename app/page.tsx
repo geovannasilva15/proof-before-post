@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import guidedDemo from "../data/guided-demo.json";
 import { useNarrator, type NarratorState } from "../hooks/useNarrator";
+import { useReviewHistory } from "../hooks/useReviewHistory";
 import {
+  isHttpsUrl,
+  normalizeUrl,
   validateAnalysisResult,
   type AnalysisErrorCode,
   type AnalysisResult,
@@ -10,179 +14,200 @@ import {
   type Language,
   type ResearchSource,
 } from "../lib/analysis";
-import { countCharacters, limitCharacters } from "../lib/text";
+import { translate, type TranslationKey } from "../lib/i18n";
+import { buildReceiptSummary, downloadReceiptPdf, downloadReceiptPng, localizedStatus, type ReceiptData } from "../lib/receipt";
+import { buildSuggestedRevision, diffDrafts, type DiffPart, type EditorialAction } from "../lib/revision";
+import {
+  createSessionId, EMPTY_COMPARISON_NOTES, reanchorCitations,
+  type ComparisonNotes, type ReviewSession, type RevisionCitation, type SessionStatus, type SourceEditedField,
+} from "../lib/session";
+import { countCharacters } from "../lib/text";
 
 type SupportId = "supports" | "partial" | "does_not_support" | "insufficient";
-type ActionId = "correct" | "context" | "remove" | "transparent" | "research";
 type ReflectionId = "narrowed" | "context" | "uncertainty" | "removed" | "research";
+type RevisionOrigin = "none" | "generated" | "guided" | "manual";
+type SourceField = SourceEditedField;
 
 const MAX_CHARACTERS = 1500;
+const CHECKLIST_IDS = ["opened", "identity", "date", "method", "limitation", "scope", "final"] as const;
 
-const tr = (language: Language, pt: string, en: string) => language === "pt" ? pt : en;
-
-const demoDraft: Record<Language, string> = {
-  en: "UNESCO proved that most digital creators spread misinformation because 62% never verify facts. This means creators are less reliable than journalists.",
-  pt: "A UNESCO provou que a maioria dos criadores digitais espalha desinformação porque 62% nunca verificam os fatos. Isso significa que criadores são menos confiáveis que jornalistas.",
-};
-
-const demoRevision: Record<Language, string> = {
-  en: "In a UNESCO survey of 500 digital content creators from 45 countries, 62% reported that they did not conduct rigorous and systematic fact-checking before sharing content. The result highlights a need for training, but it does not prove that creators intentionally spread misinformation or that they are less reliable than journalists.",
-  pt: "Em uma pesquisa da UNESCO com 500 criadores de conteúdo digital de 45 países, 62% informaram que não realizavam uma verificação rigorosa e sistemática antes de compartilhar conteúdo. O resultado indica uma necessidade de capacitação, mas não prova que os criadores espalhem desinformação intencionalmente nem que sejam menos confiáveis que jornalistas.",
-};
-
-const demoSourceUrl = "https://www.unesco.org/en/articles/2/3-digital-content-creators-do-not-check-their-facts-sharing-want-learn-how-do-so-unesco-survey";
-
-const demoData: Record<Language, AnalysisResult> = {
-  en: {
+function buildDemo(language: Language): AnalysisResult {
+  const localized = guidedDemo[language];
+  const source = guidedDemo.source;
+  return {
     mode: "demo",
-    language: "en",
+    language,
     searchedAt: "2024-11-26T00:00:00.000Z",
-    researchSummary: "Guided demonstration based on UNESCO's published survey summary. This is prepared learning content, not a live search.",
+    researchSummary: localized.researchSummary,
     sources: [{
-      id: "unesco-1",
-      title: "2/3 of digital content creators do not check their facts before sharing",
-      url: demoSourceUrl,
-      publisher: "UNESCO",
-      publishedAt: "2024",
-      excerpt: "UNESCO reports a survey of 500 creators in 45 countries about fact-checking practices and training needs.",
-      relevance: "The source reports verification practices, but it does not measure how much misinformation creators publish or compare their reliability with journalists.",
+      id: source.id,
+      title: source.title,
+      url: guidedDemo.sourceUrl,
+      authorOrInstitution: source.authorOrInstitution,
+      publishedAt: source.publishedAt,
+      sourceType: source.sourceType[language],
+      methodology: source.methodology[language],
+      sample: source.sample[language],
+      geography: source.geography[language],
+      keyFindings: source.keyFindings[language],
+      measuredOrReported: source.measuredOrReported[language],
+      doesNotEstablish: source.doesNotEstablish[language],
+      contextLimitations: source.contextLimitations[language],
+      relationSummary: source.relationSummary[language],
+      accessedAt: new Date().toISOString().slice(0, 10),
+      provenance: "demo",
     }],
-    claims: [
-      { id: "claim-1", text: "UNESCO proved that most digital creators spread misinformation.", category: "Unsupported conclusion", reason: "The survey measured verification practices—not how much misinformation creators spread.", question: "What exactly did the UNESCO survey measure?", tone: "amber", sourceIds: ["unesco-1"] },
-      { id: "claim-2", text: "62% never verify facts.", category: "Misrepresented statistic", reason: "The source says 62% did not conduct rigorous, systematic fact-checking. It does not say they never check facts.", question: "Does the word “never” match the source's wording?", tone: "violet", sourceIds: ["unesco-1"] },
-      { id: "claim-3", text: "Creators are less reliable than journalists.", category: "Unsupported comparison", reason: "The survey did not compare creators with journalists or measure either group's reliability.", question: "Which evidence supports this comparison?", tone: "teal", sourceIds: ["unesco-1"] },
-    ],
-  },
-  pt: {
-    mode: "demo",
-    language: "pt",
-    searchedAt: "2024-11-26T00:00:00.000Z",
-    researchSummary: "Demonstração guiada baseada no resumo publicado pela UNESCO. Este é um conteúdo educativo preparado, não uma pesquisa ao vivo.",
-    sources: [{
-      id: "unesco-1",
-      title: "Dois em cada três criadores digitais não verificam os fatos antes de compartilhar",
-      url: demoSourceUrl,
-      publisher: "UNESCO",
-      publishedAt: "2024",
-      excerpt: "A UNESCO apresenta uma pesquisa com 500 criadores de 45 países sobre práticas de verificação e necessidades de capacitação.",
-      relevance: "A fonte informa práticas de verificação, mas não mede quanta desinformação os criadores publicam nem compara sua confiabilidade com a de jornalistas.",
-    }],
-    claims: [
-      { id: "claim-1", text: "A UNESCO provou que a maioria dos criadores digitais espalha desinformação.", category: "Conclusão sem apoio", reason: "A pesquisa mediu práticas de verificação — não a quantidade de desinformação divulgada.", question: "O que a pesquisa da UNESCO realmente mediu?", tone: "amber", sourceIds: ["unesco-1"] },
-      { id: "claim-2", text: "62% nunca verificam os fatos.", category: "Estatística distorcida", reason: "A fonte afirma que 62% não faziam verificação rigorosa e sistemática. Ela não diz que nunca verificavam nada.", question: "A palavra “nunca” corresponde ao texto da fonte?", tone: "violet", sourceIds: ["unesco-1"] },
-      { id: "claim-3", text: "Criadores são menos confiáveis que jornalistas.", category: "Comparação sem apoio", reason: "A pesquisa não comparou criadores e jornalistas nem mediu a confiabilidade dos grupos.", question: "Qual evidência sustenta essa comparação?", tone: "teal", sourceIds: ["unesco-1"] },
-    ],
-  },
-};
+    claims: localized.claims.map((claim) => ({
+      ...claim,
+      tone: claim.tone as Claim["tone"],
+      sourceIds: [source.id],
+    })),
+  };
+}
 
-const supportOptions: Record<Language, Array<{ id: SupportId; label: string }>> = {
-  en: [
-    { id: "supports", label: "Supports" },
-    { id: "partial", label: "Partially supports" },
-    { id: "does_not_support", label: "Does not support" },
-    { id: "insufficient", label: "Not enough information" },
-  ],
-  pt: [
-    { id: "supports", label: "Sustenta" },
-    { id: "partial", label: "Sustenta parcialmente" },
-    { id: "does_not_support", label: "Não sustenta" },
-    { id: "insufficient", label: "Informações insuficientes" },
-  ],
-};
+function getSupportOptions(language: Language) {
+  return [
+    { id: "supports" as const, label: translate(language, "supportSupports") },
+    { id: "partial" as const, label: translate(language, "supportPartial") },
+    { id: "does_not_support" as const, label: translate(language, "supportNo") },
+    { id: "insufficient" as const, label: translate(language, "supportInsufficient") },
+  ];
+}
 
-const actionOptions: Record<Language, Array<{ id: ActionId; title: string; description: string; icon: string }>> = {
-  en: [
-    { id: "correct", title: "Correct the claim", description: "Narrow or correct what the content asserts.", icon: "✎" },
-    { id: "context", title: "Add context", description: "Explain what the source measured—and what it did not.", icon: "+" },
-    { id: "remove", title: "Remove the claim", description: "Take out a conclusion the evidence cannot support.", icon: "−" },
-    { id: "transparent", title: "Keep with transparency", description: "Keep it while stating the evidence limitation.", icon: "◌" },
-    { id: "research", title: "Find better evidence", description: "Pause publication and look for stronger support.", icon: "⌕" },
-  ],
-  pt: [
-    { id: "correct", title: "Corrigir a afirmação", description: "Reduza ou corrija o que o conteúdo afirma.", icon: "✎" },
-    { id: "context", title: "Adicionar contexto", description: "Explique o que a fonte mediu — e o que não mediu.", icon: "+" },
-    { id: "remove", title: "Remover a afirmação", description: "Retire uma conclusão que a evidência não sustenta.", icon: "−" },
-    { id: "transparent", title: "Manter com transparência", description: "Mantenha informando a limitação da evidência.", icon: "◌" },
-    { id: "research", title: "Buscar evidência melhor", description: "Pause a publicação e procure um apoio mais forte.", icon: "⌕" },
-  ],
-};
+function getActionOptions(language: Language) {
+  return [
+    { id: "correct" as const, title: translate(language, "actionCorrect"), description: translate(language, "actionCorrectDescription"), icon: "✎" },
+    { id: "context" as const, title: translate(language, "actionContext"), description: translate(language, "actionContextDescription"), icon: "+" },
+    { id: "remove" as const, title: translate(language, "actionRemove"), description: translate(language, "actionRemoveDescription"), icon: "−" },
+    { id: "transparent" as const, title: translate(language, "actionTransparent"), description: translate(language, "actionTransparentDescription"), icon: "◌" },
+    { id: "research" as const, title: translate(language, "actionResearch"), description: translate(language, "actionResearchDescription"), icon: "⌕" },
+  ];
+}
 
-const reflectionOptions: Record<Language, Array<{ id: ReflectionId; label: string }>> = {
-  en: [
-    { id: "narrowed", label: "I narrowed the claim" },
-    { id: "context", label: "I added missing context" },
-    { id: "uncertainty", label: "I acknowledged uncertainty" },
-    { id: "removed", label: "I removed an unsupported conclusion" },
-    { id: "research", label: "I decided to find better evidence" },
-  ],
-  pt: [
-    { id: "narrowed", label: "Reduzi a afirmação" },
-    { id: "context", label: "Adicionei o contexto ausente" },
-    { id: "uncertainty", label: "Reconheci a incerteza" },
-    { id: "removed", label: "Removi uma conclusão sem apoio" },
-    { id: "research", label: "Decidi buscar evidências melhores" },
-  ],
-};
+function getReflectionOptions(language: Language) {
+  return [
+    { id: "narrowed" as const, label: translate(language, "reflectionNarrowed") },
+    { id: "context" as const, label: translate(language, "reflectionContext") },
+    { id: "uncertainty" as const, label: translate(language, "reflectionUncertainty") },
+    { id: "removed" as const, label: translate(language, "reflectionRemoved") },
+    { id: "research" as const, label: translate(language, "reflectionResearch") },
+  ];
+}
 
 function analysisErrorMessage(language: Language, code: AnalysisErrorCode | null) {
-  switch (code) {
-    case "CONFIGURATION_ERROR":
-      return tr(language, "A pesquisa ao vivo ainda não foi configurada. Adicione a chave do serviço na Vercel para ativá-la.", "Live research has not been configured yet. Add the service key in Vercel to enable it.");
-    case "NO_VERIFIABLE_CLAIMS":
-      return tr(language, "Não encontramos uma afirmação verificável clara. Inclua um dado, comparação ou conclusão factual e tente novamente.", "We could not find a clear verifiable claim. Add a statistic, comparison, or factual conclusion and try again.");
-    case "NO_VERIFIED_SOURCES":
-      return tr(language, "A pesquisa não encontrou fontes verificáveis suficientes. Nenhuma resposta simulada foi exibida.", "The research did not find enough verifiable sources. No simulated answer was displayed.");
-    case "INVALID_REQUEST":
-      return tr(language, "Revise o rascunho e tente novamente.", "Review the draft and try again.");
-    default:
-      return tr(language, "Não foi possível concluir a pesquisa agora. Tente novamente em alguns instantes.", "The research could not be completed right now. Please try again shortly.");
-  }
+  const keys: Record<AnalysisErrorCode, TranslationKey> = {
+    CONFIGURATION_ERROR: "configurationError",
+    NO_VERIFIABLE_CLAIMS: "noClaimsError",
+    NO_VERIFIED_SOURCES: "noSourcesError",
+    RATE_LIMITED: "rateLimitedError",
+    TIMEOUT: "timeoutError",
+    INVALID_RESPONSE: "invalidResponseError",
+    INVALID_REQUEST: "invalidRequestError",
+    UPSTREAM_ERROR: "upstreamError",
+  };
+  return translate(language, code ? keys[code] : "upstreamError");
 }
 
 export default function Home() {
-  const [language, setLanguage] = useState<Language>("en");
+  const [language, setLanguage] = useState<Language>("pt");
   const [step, setStep] = useState(0);
   const [guided, setGuided] = useState(false);
   const [draft, setDraft] = useState("");
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [sessionId, setSessionId] = useState("");
+  const [sessionCreatedAt, setSessionCreatedAt] = useState("");
   const [selectedClaimId, setSelectedClaimId] = useState("");
   const [selectedSourceId, setSelectedSourceId] = useState("");
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [support, setSupport] = useState<SupportId | "">("");
-  const [action, setAction] = useState<ActionId | "">("");
+  const [supportJustification, setSupportJustification] = useState("");
+  const [action, setAction] = useState<EditorialAction | "">("");
+  const [revisionAction, setRevisionAction] = useState<EditorialAction | "">("");
   const [revised, setRevised] = useState("");
   const [reflection, setReflection] = useState<ReflectionId | "">("");
   const [sourceNotes, setSourceNotes] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [downloadState, setDownloadState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [pdfState, setPdfState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [researching, setResearching] = useState(false);
   const [analysisError, setAnalysisError] = useState<AnalysisErrorCode | null>(null);
   const [needsResearchRefresh, setNeedsResearchRefresh] = useState(false);
+  const [revisionTab, setRevisionTab] = useState<"original" | "revised">("revised");
+  const [revisionOrigin, setRevisionOrigin] = useState<RevisionOrigin>("none");
+  const [sourceEditedFields, setSourceEditedFields] = useState<Record<string, SourceField[]>>({});
+  const [comparisonNotes, setComparisonNotes] = useState<ComparisonNotes>(EMPTY_COMPARISON_NOTES);
+  const [citations, setCitations] = useState<RevisionCitation[]>([]);
+  const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
+  const [citationSourceIds, setCitationSourceIds] = useState<string[]>([]);
+  const [citationNote, setCitationNote] = useState("");
+  const [citationError, setCitationError] = useState("");
+  const [checklist, setChecklist] = useState<string[]>([]);
+  const [pendingAcknowledged, setPendingAcknowledged] = useState(false);
+  const [translatedDraft, setTranslatedDraft] = useState("");
+  const [translationState, setTranslationState] = useState<"idle" | "loading" | "error">("idle");
+  const [inputMode, setInputMode] = useState<"text" | "url">("text");
+  const [urlInput, setUrlInput] = useState("");
+  const [extractionState, setExtractionState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [extractionPreview, setExtractionPreview] = useState("");
+  const [extractionTruncated, setExtractionTruncated] = useState(false);
+  const [extractionError, setExtractionError] = useState("");
+  const [lastSavedAt, setLastSavedAt] = useState("");
   const requestController = useRef<AbortController | null>(null);
+  const revisionRef = useRef<HTMLTextAreaElement | null>(null);
+  const { sessions, ready: historyReady, save: saveSession, remove: removeSavedSession, duplicate: duplicateSavedSession, clear: clearSavedSessions } = useReviewHistory();
   const narrator = useNarrator(language);
-  const characterCount = countCharacters(draft, language);
+  const t = (key: TranslationKey, values?: Record<string, string | number>) => translate(language, key, values);
 
   useEffect(() => {
     document.documentElement.lang = language === "pt" ? "pt-BR" : "en";
+    const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    if (description) description.content = translate(language, "metaDescription");
   }, [language]);
-
   useEffect(() => () => requestController.current?.abort(), []);
+  useEffect(() => narrator.stop, [step, language, narrator.stop]);
 
   const claims = analysis?.claims ?? [];
   const claim = claims.find((item) => item.id === selectedClaimId) ?? claims[0];
   const relatedSources = useMemo(() => {
     if (!analysis || !claim) return [];
-    return analysis.sources.filter((source) => claim.sourceIds.includes(source.id));
+    return analysis.sources.filter((item) => claim.sourceIds.includes(item.id));
   }, [analysis, claim]);
-  const source = relatedSources.find((item) => item.id === selectedSourceId) ?? relatedSources[0] ?? analysis?.sources[0];
-  const supportLabel = supportOptions[language].find((item) => item.id === support)?.label ?? "";
-  const actionLabel = actionOptions[language].find((item) => item.id === action)?.title ?? "";
-  const reflectionLabel = reflectionOptions[language].find((item) => item.id === reflection)?.label ?? "";
-  const labels = language === "pt" ? ["Rascunho", "Afirmação", "Evidência", "Decisão", "Recibo"] : ["Draft", "Claim", "Evidence", "Decision", "Receipt"];
+  const source = relatedSources.find((item) => item.id === selectedSourceId) ?? relatedSources[0];
+  const selectedSources = relatedSources.filter((item) => selectedSourceIds.includes(item.id));
+  const normalizedSourceUrls = selectedSources.filter((item) => isHttpsUrl(item.url)).map((item) => normalizeUrl(item.url));
+  const hasDuplicateSources = new Set(normalizedSourceUrls).size !== normalizedSourceUrls.length;
+  const sourceValid = selectedSources.length > 0 && selectedSources.length <= 3 && !hasDuplicateSources && selectedSources.every((item) => item.title.trim() && item.measuredOrReported.trim() && isHttpsUrl(item.url));
+  const supportOptions = getSupportOptions(language);
+  const actionOptions = getActionOptions(language);
+  const reflectionOptions = getReflectionOptions(language);
+  const supportLabel = supportOptions.find((item) => item.id === support)?.label ?? "";
+  const actionLabel = actionOptions.find((item) => item.id === action)?.title ?? "";
+  const reflectionLabel = reflectionOptions.find((item) => item.id === reflection)?.label ?? "";
+  const progressLabels = [t("progressDraft"), t("progressClaim"), t("progressEvidence"), t("progressDecision"), t("progressReview")];
+  const draftCount = countCharacters(draft);
+  const revisedCount = countCharacters(revised);
+  const draftExcess = Math.max(0, draftCount - MAX_CHARACTERS);
+  const revisedExcess = Math.max(0, revisedCount - MAX_CHARACTERS);
+  const diff = useMemo(() => diffDrafts(draft, revised, action === "research"), [action, draft, revised]);
+  const hasUnreferencedContext = useMemo(() => hasUnreferencedAddedContext(diff.revised, citations), [citations, diff.revised]);
+  const checklistComplete = CHECKLIST_IDS.every((id) => checklist.includes(id));
+  const pending = action === "research";
+  const sessionStatus: SessionStatus = step < 6 ? "in_progress" : pending ? "completed_with_pending" : "completed";
 
-  function chooseClaim(item: Claim) {
-    setSelectedClaimId(item.id);
-    setSelectedSourceId(item.sourceIds[0] ?? "");
-    setSupport("");
-  }
+  useEffect(() => {
+    if (!historyReady || guided || !sessionId || step === 0) return;
+    const timer = window.setTimeout(() => {
+      const updatedAt = new Date().toISOString();
+      saveSession({
+      version: 2, id: sessionId, createdAt: sessionCreatedAt || updatedAt, updatedAt,
+      language, step, draft, analysis, selectedClaimId, selectedSourceIds, primarySourceId: selectedSourceId,
+      sources: analysis?.sources ?? [], support, supportJustification, action, revised, translatedDraft, reflection,
+      comparisonNotes, citations, checklist, pendingAcknowledged, sourceNotes, sourceEditedFields, status: sessionStatus,
+      });
+      setLastSavedAt(updatedAt);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [action, analysis, checklist, citations, comparisonNotes, draft, guided, historyReady, language, pendingAcknowledged, reflection, revised, saveSession, selectedClaimId, selectedSourceId, selectedSourceIds, sessionCreatedAt, sessionId, sessionStatus, sourceEditedFields, sourceNotes, step, support, supportJustification, translatedDraft]);
 
   function resetReview() {
     requestController.current?.abort();
@@ -190,65 +215,201 @@ export default function Home() {
     setResearching(false);
     setSelectedClaimId("");
     setSelectedSourceId("");
+    setSelectedSourceIds([]);
     setSupport("");
+    setSupportJustification("");
     setAction("");
+    setRevisionAction("");
     setRevised("");
+    setRevisionOrigin("none");
+    setSourceEditedFields({});
     setReflection("");
     setSourceNotes("");
-    setCopied(false);
+    setCopyState("idle");
+    setDownloadState("idle");
+    setPdfState("idle");
     setAnalysisError(null);
     setNeedsResearchRefresh(false);
+    setComparisonNotes(EMPTY_COMPARISON_NOTES);
+    setCitations([]);
+    setChecklist([]);
+    setPendingAcknowledged(false);
+    setTranslatedDraft("");
+    setTranslationState("idle");
+    setExtractionState("idle");
+    setExtractionPreview("");
+    setExtractionTruncated(false);
+    setExtractionError("");
+    setLastSavedAt("");
     narrator.stop();
   }
 
   function start(isGuided: boolean) {
     resetReview();
+    const now = new Date().toISOString();
+    setSessionId(isGuided ? "" : createSessionId());
+    setSessionCreatedAt(now);
     setGuided(isGuided);
-    setDraft(isGuided ? demoDraft[language] : "");
-    setAnalysis(isGuided ? demoData[language] : null);
+    setDraft(isGuided ? guidedDemo[language].draft : "");
+    setAnalysis(isGuided ? buildDemo(language) : null);
     setStep(1);
+  }
+
+  function saveAndExit() {
+    if (guided || !sessionId) {
+      setStep(0);
+      return;
+    }
+    const updatedAt = new Date().toISOString();
+    saveSession({
+      version: 2, id: sessionId, createdAt: sessionCreatedAt || updatedAt, updatedAt,
+      language, step, draft, analysis, selectedClaimId, selectedSourceIds, primarySourceId: selectedSourceId,
+      sources: analysis?.sources ?? [], support, supportJustification, action, revised, translatedDraft, reflection,
+      comparisonNotes, citations, checklist, pendingAcknowledged, sourceNotes, sourceEditedFields, status: sessionStatus,
+    });
+    setLastSavedAt(updatedAt);
+    setStep(0);
   }
 
   function changeLanguage(nextLanguage: Language) {
     if (nextLanguage === language) return;
-    requestController.current?.abort();
-    requestController.current = null;
-    setResearching(false);
     narrator.stop();
     setLanguage(nextLanguage);
     if (guided) {
-      setDraft(demoDraft[nextLanguage]);
-      setAnalysis(demoData[nextLanguage]);
-      setSelectedClaimId("");
-      setSelectedSourceId("");
-      setRevised("");
-      setSupport("");
-      setAction("");
-      setReflection("");
-      setNeedsResearchRefresh(false);
-    } else if (analysis?.mode === "live") {
-      setAnalysis(null);
-      setSelectedClaimId("");
-      setSelectedSourceId("");
-      setSupport("");
-      setAction("");
-      setRevised("");
-      setReflection("");
-      setSourceNotes("");
-      setAnalysisError(null);
+      const nextDraft = guidedDemo[nextLanguage].draft;
+      const nextAnalysis = buildDemo(nextLanguage);
+      let nextSource = nextAnalysis.sources[0];
+      const editedFields = source ? sourceEditedFields[source.id] ?? [] : [];
+      if (source && editedFields.length) {
+        for (const field of editedFields) nextSource = { ...nextSource, [field]: source[field] };
+        nextSource = { ...nextSource, provenance: "user" };
+        nextAnalysis.sources = [nextSource];
+      }
+      setDraft(nextDraft);
+      setAnalysis(nextAnalysis);
+      const nextClaim = nextAnalysis.claims.find((item) => item.id === selectedClaimId) ?? nextAnalysis.claims[0];
+      if (revisionOrigin === "guided") setRevised(guidedDemo[nextLanguage].revision);
+      if (revisionOrigin === "generated" && action) {
+        setRevised(buildSuggestedRevision(nextDraft, nextClaim, nextSource, action, nextLanguage));
+      }
+      setNeedsResearchRefresh(Boolean(
+        editedFields.length || revisionOrigin === "manual" || supportJustification.trim() || sourceNotes.trim(),
+      ));
+    } else if (analysis?.mode === "live" && analysis.language !== nextLanguage) {
       setNeedsResearchRefresh(true);
-      setStep(1);
     }
   }
 
   function updateDraft(value: string) {
-    setDraft(limitCharacters(value, MAX_CHARACTERS, language));
+    setDraft(value);
     if (guided) {
       setGuided(false);
       setAnalysis(null);
+      resetReview();
     }
     setAnalysisError(null);
     setNeedsResearchRefresh(false);
+  }
+
+  function chooseClaim(item: Claim) {
+    setSelectedClaimId(item.id);
+    setSelectedSourceId(item.sourceIds[0] ?? "");
+    setSelectedSourceIds(item.sourceIds.slice(0, 3));
+    setSupport("");
+    setSupportJustification("");
+    setAction("");
+    setRevisionAction("");
+    setRevised("");
+    setRevisionOrigin("none");
+    setReflection("");
+  }
+
+  function selectSource(sourceId: string) {
+    setSelectedSourceId(sourceId);
+    setSelectedSourceIds((ids) => ids.includes(sourceId) ? ids : [...ids, sourceId].slice(0, 3));
+    setSupport("");
+    setSupportJustification("");
+    setAction("");
+    setRevisionAction("");
+    setRevised("");
+    setRevisionOrigin("none");
+    setReflection("");
+  }
+
+  function toggleSource(sourceId: string) {
+    setSelectedSourceIds((ids) => ids.includes(sourceId) ? ids.filter((id) => id !== sourceId) : ids.length < 3 ? [...ids, sourceId] : ids);
+    if (!selectedSourceId) setSelectedSourceId(sourceId);
+  }
+
+  function updateSource(field: SourceField, value: string) {
+    if (!analysis || !source) return;
+    setSourceEditedFields((fields) => ({
+      ...fields,
+      [source.id]: fields[source.id]?.includes(field) ? fields[source.id] : [...(fields[source.id] ?? []), field],
+    }));
+    setAnalysis({ ...analysis, sources: analysis.sources.map((item) => item.id === source.id ? { ...item, [field]: value, provenance: "user" } : item) });
+  }
+
+  function resumeSession(saved: ReviewSession) {
+    resetReview();
+    setSessionId(saved.id); setSessionCreatedAt(saved.createdAt); setLanguage(saved.language); setStep(Math.max(1, saved.step));
+    setDraft(saved.draft); setAnalysis(saved.analysis ? { ...saved.analysis, sources: saved.sources } : null);
+    setSelectedClaimId(saved.selectedClaimId); setSelectedSourceIds(saved.selectedSourceIds); setSelectedSourceId(saved.primarySourceId);
+    setSupport(saved.support); setSupportJustification(saved.supportJustification); setAction(saved.action); setRevisionAction(saved.action);
+    setRevised(saved.revised); setTranslatedDraft(saved.translatedDraft); setReflection(saved.reflection);
+    setComparisonNotes(saved.comparisonNotes); setCitations(saved.citations); setChecklist(saved.checklist);
+    setPendingAcknowledged(saved.pendingAcknowledged); setSourceNotes(saved.sourceNotes); setSourceEditedFields(saved.sourceEditedFields); setGuided(false);
+  }
+
+  async function extractUrl() {
+    if (!urlInput.trim() || extractionState === "loading") return;
+    setExtractionState("loading"); setExtractionError(""); setExtractionPreview("");
+    try {
+      const response = await fetch("/api/extract", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: urlInput.trim(), language }) });
+      const result = await response.json().catch(() => null) as { text?: string; code?: string; truncated?: boolean } | null;
+      if (!response.ok || !result?.text) {
+        const key: TranslationKey = result?.code === "UNSAFE_URL" ? "unsafeExtractionUrl" : result?.code === "INVALID_URL" ? "invalidExtractionUrl" : result?.code === "UNSUPPORTED_CONTENT" ? "unsupportedExtraction" : result?.code === "NO_CONTENT" ? "noExtractedContent" : "extractionUnavailable";
+        setExtractionError(t(key)); setExtractionState("error"); return;
+      }
+      setExtractionPreview(result.text); setExtractionTruncated(Boolean(result.truncated)); setExtractionState("ready");
+    } catch { setExtractionError(t("extractionUnavailable")); setExtractionState("error"); }
+  }
+
+  function confirmExtraction() {
+    setDraft(extractionPreview); setInputMode("text"); setExtractionState("idle"); setExtractionPreview(""); setExtractionTruncated(false); setAnalysis(null);
+  }
+
+  async function generateTranslation() {
+    if (!revised.trim() || translationState === "loading") return;
+    setTranslationState("loading");
+    try {
+      const response = await fetch("/api/translate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: revised, language: language === "pt" ? "en" : "pt" }) });
+      const result = await response.json().catch(() => null) as { translatedText?: string } | null;
+      if (!response.ok || !result?.translatedText) throw new Error("translation");
+      setTranslatedDraft(result.translatedText); setTranslationState("idle");
+    } catch { setTranslationState("error"); }
+  }
+
+  function addCitation() {
+    const { start, end } = selectionRange;
+    const citedText = revised.slice(start, end);
+    if (!citedText || citationSourceIds.length === 0) { setCitationError(t("noCitationSelection")); return; }
+    setCitations((items) => {
+      const additions = citationSourceIds
+        .filter((sourceId) => !items.some((item) => item.sourceId === sourceId && item.revisedTextStart === start && item.revisedTextEnd === end))
+        .map((sourceId) => ({ id: createSessionId(), revisedTextStart: start, revisedTextEnd: end, sourceId, citedText, note: citationNote.trim() || undefined, broken: false }));
+      return [...items, ...additions];
+    });
+    setCitationNote(""); setCitationError("");
+  }
+
+  function returnToResearch() {
+    const currentDraft = draft;
+    resetReview();
+    setGuided(false);
+    setAnalysis(null);
+    setDraft(currentDraft);
+    setStep(1);
   }
 
   async function analyzeDraft() {
@@ -258,7 +419,6 @@ export default function Home() {
       setStep(2);
       return;
     }
-
     setResearching(true);
     setAnalysisError(null);
     setNeedsResearchRefresh(false);
@@ -266,191 +426,320 @@ export default function Home() {
     requestController.current?.abort();
     requestController.current = controller;
     try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ draft: draft.trim(), language }),
-        signal: controller.signal,
-      });
+      const response = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draft: draft.trim(), language }), signal: controller.signal });
       const result: unknown = await response.json().catch(() => null);
       if (!response.ok || !validateAnalysisResult(result)) {
-        const code = result && typeof result === "object" && "code" in result ? String(result.code) : "UPSTREAM_ERROR";
-        setAnalysisError(code as AnalysisErrorCode);
+        const rawCode = result && typeof result === "object" && "code" in result ? String(result.code) : "UPSTREAM_ERROR";
+        const allowed: AnalysisErrorCode[] = ["CONFIGURATION_ERROR", "INVALID_REQUEST", "NO_VERIFIABLE_CLAIMS", "NO_VERIFIED_SOURCES", "RATE_LIMITED", "TIMEOUT", "INVALID_RESPONSE", "UPSTREAM_ERROR"];
+        setAnalysisError(allowed.includes(rawCode as AnalysisErrorCode) ? rawCode as AnalysisErrorCode : "UPSTREAM_ERROR");
         return;
       }
       setAnalysis(result);
-      setSelectedClaimId(result.claims[0].id);
-      setSelectedSourceId(result.claims[0].sourceIds[0] ?? "");
+      chooseClaim(result.claims[0]);
       setStep(2);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setAnalysisError("UPSTREAM_ERROR");
     } finally {
-      if (requestController.current === controller) {
-        requestController.current = null;
-        setResearching(false);
-      }
+      if (requestController.current === controller) { requestController.current = null; setResearching(false); }
     }
   }
 
-  const receiptTitle = tr(language, "Recibo de Evidências", "Evidence Receipt");
-  const receiptSummary = `${tr(language, "Afirmação examinada", "Claim examined")}: ${claim?.text ?? "—"}\n${tr(language, "Fonte", "Source")}: ${source?.publisher ?? "—"} — ${source?.title ?? "—"}\n${tr(language, "Endereço da fonte", "Source URL")}: ${source?.url ?? "—"}\n${tr(language, "Relação", "Relationship")}: ${supportLabel || "—"}\n${tr(language, "Decisão", "Decision")}: ${actionLabel || "—"}\n${tr(language, "Reflexão", "Reflection")}: ${reflectionLabel || "—"}`;
+  function continueToRevision() {
+    if (!action || !claim || !source) return;
+    if (revisionAction !== action || !revised) {
+      const suggestion = buildSuggestedRevision(draft, claim, source, action, language);
+      setRevised(suggestion);
+      const changed = diffDrafts(draft, suggestion, action === "research").revised.find((part) => part.kind !== "same")?.text.trim();
+      setCitations(changed && action !== "research" ? [{ id: createSessionId(), revisedTextStart: suggestion.indexOf(changed), revisedTextEnd: suggestion.indexOf(changed) + changed.length, sourceId: source.id, citedText: changed, broken: false }] : []);
+      setReflection("");
+      setRevisionAction(action);
+      setRevisionOrigin("generated");
+    }
+    setStep(5);
+  }
+
+  function receiptData(): ReceiptData | null {
+    if (!claim || !selectedSources.length || !support || !action || !reflection) return null;
+    return { language, claim: claim.text, sources: selectedSources, support: supportLabel, justification: supportJustification, decision: actionLabel, originalDraft: draft, revisedDraft: revised, reflection: reflectionLabel, comparisonNotes, citations, checklist, pending, status: sessionStatus, translatedDraft, unreferencedContext: hasUnreferencedContext, createdAt: new Date() };
+  }
 
   async function copyReceipt() {
-    await navigator.clipboard.writeText(receiptSummary);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    const data = receiptData();
+    if (!data || copyState === "loading" || downloadState === "loading" || pdfState === "loading") return;
+    setCopyState("loading");
+    try {
+      const text = buildReceiptSummary(data);
+      let copiedWithClipboard = false;
+      if (navigator.clipboard?.writeText) {
+        try { await navigator.clipboard.writeText(text); copiedWithClipboard = true; } catch { copiedWithClipboard = false; }
+      }
+      if (!copiedWithClipboard) {
+        const area = document.createElement("textarea");
+        area.value = text; area.style.position = "fixed"; area.style.opacity = "0";
+        document.body.appendChild(area); area.select();
+        const copiedWithFallback = document.execCommand("copy");
+        area.remove();
+        if (!copiedWithFallback) throw new Error("Copy failed");
+      }
+      setCopyState("success");
+      window.setTimeout(() => setCopyState("idle"), 2200);
+    } catch { setCopyState("error"); }
   }
 
-  function downloadReceipt() {
-    const canvas = document.createElement("canvas");
-    canvas.width = 1200;
-    canvas.height = 1500;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.fillStyle = "#f7f9ff";
-    ctx.fillRect(0, 0, 1200, 1500);
-    ctx.fillStyle = "#5c57e7";
-    ctx.fillRect(0, 0, 1200, 18);
-    ctx.fillStyle = "#101e3b";
-    ctx.font = "700 58px Arial";
-    ctx.fillText(receiptTitle, 80, 115);
-    ctx.font = "24px Arial";
-    ctx.fillStyle = "#667085";
-    ctx.fillText(tr(language, "Registro das decisões de verificação antes da publicação", "A record of verification decisions made before publication"), 80, 160);
-    const sections = [
-      [tr(language, "AFIRMAÇÃO EXAMINADA", "CLAIM EXAMINED"), claim?.text],
-      [tr(language, "FONTE CONSULTADA", "SOURCE CONSULTED"), `${source?.publisher ?? "—"} · ${source?.title ?? "—"} · ${source?.publishedAt ?? "—"}`],
-      [tr(language, "RELAÇÃO COM A EVIDÊNCIA", "EVIDENCE RELATIONSHIP"), supportLabel],
-      [tr(language, "DECISÃO EDITORIAL", "EDITORIAL DECISION"), actionLabel],
-      [tr(language, "REFLEXÃO", "REFLECTION"), reflectionLabel || "—"],
-    ];
-    let y = 245;
-    for (const [title, body] of sections) {
-      ctx.font = "700 18px Arial";
-      ctx.fillStyle = "#5c57e7";
-      ctx.fillText(title ?? "", 80, y);
-      y += 38;
-      ctx.font = "28px Arial";
-      ctx.fillStyle = "#26324b";
-      y = wrapCanvasText(ctx, body || "—", 80, y, 1020, 40) + 54;
-    }
-    ctx.fillStyle = "#101e3b";
-    ctx.fillRect(70, 1300, 1060, 125);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "700 22px Arial";
-    ctx.fillText(tr(language, "Este recibo não certifica que o conteúdo é verdadeiro.", "This receipt does not certify that the content is true."), 105, 1355);
-    ctx.font = "19px Arial";
-    ctx.fillStyle = "#cbd5e7";
-    ctx.fillText(tr(language, "Ele documenta o processo de verificação do criador.", "It documents the creator's verification process."), 105, 1392);
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = language === "pt" ? "recibo-de-evidencias.png" : "evidence-receipt.png";
-      link.click();
-      URL.revokeObjectURL(url);
-    }, "image/png");
+  async function downloadReceipt() {
+    const data = receiptData();
+    if (!data || downloadState === "loading" || pdfState === "loading" || copyState === "loading") return;
+    setDownloadState("loading");
+    try {
+      await downloadReceiptPng(data);
+      setDownloadState("success");
+      window.setTimeout(() => setDownloadState("idle"), 2600);
+    } catch { setDownloadState("error"); }
   }
 
-  if (step === 0) return <Landing language={language} setLanguage={changeLanguage} start={start} />;
+  async function downloadPdf() {
+    const data = receiptData();
+    if (!data || pdfState === "loading" || downloadState === "loading" || copyState === "loading") return;
+    setPdfState("loading");
+    try { await downloadReceiptPdf(data); setPdfState("success"); window.setTimeout(() => setPdfState("idle"), 2600); }
+    catch { setPdfState("error"); }
+  }
+
+  if (step === 0) return <Landing language={language} setLanguage={changeLanguage} start={start} sessions={sessions} historyReady={historyReady} resume={resumeSession} duplicate={(saved) => duplicateSavedSession(saved)} remove={(id) => { if (window.confirm(t("confirmDelete"))) removeSavedSession(id); }} clear={() => { if (window.confirm(t("confirmClear"))) clearSavedSessions(); }} />;
 
   return (
     <main className="app-shell editor-page">
       <Header language={language} setLanguage={changeLanguage} home={() => setStep(0)} compact />
-      <Progress step={step} labels={labels} language={language} />
+      <Progress step={step} labels={progressLabels} language={language} />
+      {!guided && <div className="save-bar" role="status" aria-live="polite">
+        <span><i />{lastSavedAt ? t("savedLocally", { time: new Intl.DateTimeFormat(language === "pt" ? "pt-BR" : "en-US", { hour: "2-digit", minute: "2-digit" }).format(new Date(lastSavedAt)) }) : t("localStorageDetail")}</span>
+        <button type="button" onClick={saveAndExit}>{t("saveAndExit")}</button>
+      </div>}
+      {needsResearchRefresh && <div className="translation-notice global" role="status"><span>i</span><p>{t("interfaceTranslated")}</p>{analysis?.mode === "live" && <button type="button" onClick={returnToResearch}>{t("reviewResearchLanguage")}</button>}</div>}
+      {step > 1 && step < 6 && <PreviousStepsSummary language={language} draft={draft} claim={claim?.text ?? ""} sources={selectedSources} support={supportLabel} decision={actionLabel} />}
 
       {step === 1 && <>
-        <StepIntro eyebrow={tr(language, "ETAPA 1 DE 5", "STEP 1 OF 5")} title={tr(language, "Revise antes de publicar", "Review before you publish")} lead={tr(language, "Cole uma legenda, roteiro ou publicação. A pesquisa ao vivo encontrará até três afirmações e fontes reais para você examinar.", "Paste a caption, script, or post. Live research will find up to three claims and real sources for you to examine.")} />
-        <section className="editor-grid">
-          <div className="draft-card">
-            <label htmlFor="draft">{tr(language, "SEU RASCUNHO", "YOUR DRAFT")}</label>
-            <textarea id="draft" aria-label={tr(language, "Seu rascunho", "Your draft")} value={draft} placeholder={tr(language, "Cole seu rascunho aqui…", "Paste your draft here…")} onChange={(event) => updateDraft(event.target.value)} autoFocus />
-            <div className={`draft-meta ${characterCount >= 1400 ? "near-limit" : ""}`}>
-              <span>{tr(language, "Máximo de 1.500 caracteres", "Maximum 1,500 characters")}</span>
-              <strong aria-live="polite">{formatNumber(language, characterCount)} / {formatNumber(language, MAX_CHARACTERS)}</strong>
-            </div>
-          </div>
-          <InfoCard language={language} />
-        </section>
-        {needsResearchRefresh && <div className="translation-notice" role="status"><span>i</span><p>{tr(language, "A interface foi traduzida. Execute a pesquisa novamente para gerar explicações e fontes no idioma selecionado.", "The interface was translated. Run the research again to generate explanations and sources in the selected language.")}</p></div>}
-        {analysisError && <div className="analysis-error" role="alert"><span>!</span><div><strong>{tr(language, "A pesquisa não foi concluída", "Research was not completed")}</strong><p>{analysisErrorMessage(language, analysisError)}</p><button onClick={() => start(true)}>{tr(language, "Abrir demonstração guiada", "Open guided demonstration")}</button></div></div>}
-        <Actions back={() => setStep(0)} language={language}>
-          <button className="text-button example-link" onClick={() => start(true)}>{tr(language, "Usar exemplo guiado", "Use guided example")}</button>
-          <button className="primary-button" disabled={!draft.trim() || researching} onClick={analyzeDraft} aria-busy={researching}>
-            {researching ? tr(language, "Pesquisando fontes…", "Researching sources…") : guided ? tr(language, "Analisar demonstração", "Analyze demonstration") : tr(language, "Pesquisar e encontrar afirmações", "Research and find claims")}
-            <span>{researching ? "…" : "→"}</span>
-          </button>
-        </Actions>
+        <StepIntro eyebrow={t("step1")} title={t("reviewBeforePost")} lead={t("step1Lead")} />
+        <div className="input-tabs" role="tablist" aria-label={t("inputMethod")}><button id="input-tab-text" role="tab" aria-controls="input-panel-text" aria-selected={inputMode === "text"} tabIndex={inputMode === "text" ? 0 : -1} className={inputMode === "text" ? "active" : ""} onKeyDown={(event) => handleTabKey(event, "text", setInputMode)} onClick={() => setInputMode("text")}>{t("pasteText")}</button><button id="input-tab-url" role="tab" aria-controls="input-panel-url" aria-selected={inputMode === "url"} tabIndex={inputMode === "url" ? 0 : -1} className={inputMode === "url" ? "active" : ""} onKeyDown={(event) => handleTabKey(event, "url", setInputMode)} onClick={() => setInputMode("url")}>{t("importUrl")}</button></div>
+        {inputMode === "url" && <section id="input-panel-url" role="tabpanel" aria-labelledby="input-tab-url" className="url-import-card"><label htmlFor="publication-url">{t("publicationUrl")} <RequiredMark language={language} /></label><div><input id="publication-url" type="url" required aria-invalid={Boolean(extractionError)} aria-describedby={extractionError ? "url-error" : undefined} value={urlInput} onChange={(event) => setUrlInput(event.target.value)} placeholder={t("publicationUrlPlaceholder")} /><button className="secondary-button" disabled={!urlInput.trim() || extractionState === "loading"} onClick={extractUrl}>{extractionState === "loading" ? t("extractingUrl") : t("extractUrl")}</button></div>{extractionError && <p id="url-error" className="field-error" role="alert">{extractionError}</p>}{extractionState === "ready" && <div className="extraction-preview"><strong>{t("extractionPreview")}</strong>{extractionTruncated && <p role="status">{t("extractionTruncated")}</p>}<textarea aria-label={t("extractionPreview")} value={extractionPreview} onChange={(event) => setExtractionPreview(event.target.value)} /><div><button className="primary-button" onClick={confirmExtraction}>{t("confirmExtraction")}</button><button className="text-button" onClick={() => { setExtractionState("idle"); setExtractionPreview(""); setExtractionTruncated(false); }}>{t("cancelExtraction")}</button></div></div>}</section>}
+        {inputMode === "text" && <section id="input-panel-text" role="tabpanel" aria-labelledby="input-tab-text" className="editor-grid"><div className="draft-card"><label htmlFor="draft">{t("yourDraft")} <RequiredMark language={language} /></label><textarea id="draft" required aria-label={t("draftLabel")} aria-invalid={draftExcess > 0} aria-describedby={draftExcess > 0 ? "draft-help draft-error" : "draft-help"} value={draft} placeholder={t("draftPlaceholder")} onChange={(event) => updateDraft(event.target.value)} autoFocus /><div className={`draft-meta ${draftCount >= 1400 ? "near-limit" : ""}`}><span>{t("maxCharacters")}</span><strong aria-live="polite">{t("characterCounter", { count: formatNumber(language, draftCount), maximum: formatNumber(language, MAX_CHARACTERS) })}</strong><small id="draft-help">{t("characterCountingHelp")}</small>{draftExcess > 0 && <p id="draft-error" className="field-error" role="alert">{t("charactersOverLimit", { count: formatNumber(language, draftExcess) })}</p>}</div></div><InfoCard language={language} /></section>}
+        {analysisError && <div className="analysis-error" role="alert"><span>!</span><div><strong>{t("researchFailed")}</strong><p>{analysisErrorMessage(language, analysisError)}</p><button onClick={() => start(true)}>{t("openDemo")}</button></div></div>}
+        <Actions back={() => setStep(0)} language={language}><button className="text-button example-link" onClick={() => start(true)}>{t("useDemo")}</button><button className="primary-button" disabled={!draft.trim() || draftExcess > 0 || researching} onClick={analyzeDraft} aria-busy={researching}>{researching ? t("researching") : guided ? t("analyzeDemo") : t("researchClaims")}<span>{researching ? "…" : "→"}</span></button></Actions>
       </>}
 
       {step === 2 && analysis && <>
-        <StepIntro eyebrow={tr(language, "ETAPA 2 DE 5", "STEP 2 OF 5")} title={tr(language, "Qual afirmação merece mais atenção?", "Which claim deserves the most attention?")} lead={tr(language, "Escolha uma afirmação para investigar. A ferramenta mostra o contexto; a prioridade continua sendo sua.", "Choose one claim to investigate. The tool shows context; the priority remains yours.")} />
-        <ResearchBanner analysis={analysis} language={language} onListen={() => narrator.speak(analysis.researchSummary)} narratorState={narrator.state} stop={narrator.stop} />
+        <StepIntro eyebrow={t("step2")} title={t("claimAttention")} lead={t("step2Lead")} />
+        <ResearchBanner analysis={analysis} language={language} narrator={narrator} />
         <NarrationStatus state={narrator.state} language={language} voiceName={narrator.voiceName} />
-        <section className="claims-grid">{claims.map((item, index) => <article role="button" tabIndex={0} aria-pressed={claim?.id === item.id} key={item.id} className={`claim-card ${item.tone} ${claim?.id === item.id ? "selected" : ""}`} onClick={() => chooseClaim(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); chooseClaim(item); } }}><div className="claim-head"><span>{String(index + 1).padStart(2, "0")}</span><b>{item.category}</b><i>{claim?.id === item.id ? "✓" : ""}</i></div><blockquote>“{item.text}”</blockquote><div className="claim-reason"><small>{tr(language, "POR QUE MERECE ATENÇÃO", "WHY IT NEEDS ATTENTION")}</small><p>{item.reason}</p></div><div className="claim-question"><span>?</span><p>{item.question}</p><button aria-label={tr(language, "Ouvir pergunta", "Listen to question")} title={tr(language, "Ouvir pergunta", "Listen to question")} onClick={(event) => { event.stopPropagation(); narrator.speak(item.question); }}>🔊</button></div></article>)}</section>
-        <Actions back={() => setStep(1)} language={language}><button className="primary-button" onClick={() => { setSelectedSourceId(claim?.sourceIds[0] ?? ""); setStep(3); }}>{tr(language, "Examinar esta afirmação", "Examine this claim")}<span>→</span></button></Actions>
+        <section className="claims-grid">{claims.map((item, index) => <article role="button" tabIndex={0} aria-pressed={claim?.id === item.id} key={item.id} className={`claim-card ${item.tone} ${claim?.id === item.id ? "selected" : ""}`} onClick={() => chooseClaim(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); chooseClaim(item); } }}><div className="claim-head"><span>{String(index + 1).padStart(2, "0")}</span><b>{item.category}</b><i>{claim?.id === item.id ? "✓" : ""}</i></div><blockquote>“{item.text}”</blockquote><div className="claim-reason"><small>{t("whyAttention")}</small><p>{item.reason}</p></div><div className="claim-question"><span>?</span><p>{item.question}</p><button aria-label={t("listenQuestion")} title={t("listenQuestion")} onClick={(event) => { event.stopPropagation(); narrator.speak(item.question); }}>🔊</button></div></article>)}</section>
+        <Actions back={() => setStep(1)} language={language}><button className="primary-button" disabled={!claim} onClick={() => { const ids = claim?.sourceIds.slice(0, 3) ?? []; setSelectedSourceId(ids[0] ?? ""); setSelectedSourceIds(ids); setStep(3); }}>{t("examineClaim")}<span>→</span></button></Actions>
       </>}
 
       {step === 3 && analysis && claim && <>
-        <StepIntro eyebrow={tr(language, "ETAPA 3 DE 5", "STEP 3 OF 5")} title={tr(language, "O que a evidência realmente sustenta?", "What does the evidence really support?")} lead={tr(language, "Abra as fontes, confira a origem e examine o que foi medido antes de escolher uma resposta.", "Open the sources, check their origin, and examine what was measured before choosing an answer.")} />
-        <section className="evidence-grid">
-          <div className="evidence-panel">
-            <span className="panel-label">{tr(language, "AFIRMAÇÃO ESCOLHIDA", "SELECTED CLAIM")}</span>
-            <blockquote>“{claim.text}”</blockquote>
-            <div className="source-heading"><div><span className="panel-label">{tr(language, "FONTES ENCONTRADAS NA PESQUISA", "SOURCES FOUND IN RESEARCH")}</span><p>{tr(language, "Clique em uma fonte para examinar os detalhes. O link abre a página original.", "Select a source to examine its details. The link opens the original page.")}</p></div><strong>{relatedSources.length}</strong></div>
-            <div className="source-results">{relatedSources.map((item) => <button key={item.id} className={`source-result ${source?.id === item.id ? "selected" : ""}`} onClick={() => setSelectedSourceId(item.id)}><span>{item.publisher}</span><strong>{item.title}</strong><small>{item.publishedAt || tr(language, "Data não informada", "Date not provided")}</small></button>)}</div>
-            {source && <SourceDetails source={source} language={language} />}
-            <label className="source-notes">{tr(language, "SUAS ANOTAÇÕES SOBRE A FONTE", "YOUR NOTES ABOUT THE SOURCE")}<textarea value={sourceNotes} onChange={(event) => setSourceNotes(event.target.value)} placeholder={tr(language, "Registre limitações, contexto ou dúvidas…", "Record limitations, context, or questions…")} /></label>
-          </div>
-          <aside className="support-panel"><span className="panel-label">{tr(language, "SUA AVALIAÇÃO", "YOUR ASSESSMENT")}</span><h2>{tr(language, "A fonte sustenta a afirmação completa?", "Does the source support the complete claim?")}</h2><div className="support-options">{supportOptions[language].map((item) => <button key={item.id} className={support === item.id ? "selected" : ""} onClick={() => setSupport(item.id)}><i>{support === item.id ? "✓" : ""}</i>{item.label}</button>)}</div><button className="listen-link" onClick={() => narrator.state === "speaking" ? narrator.stop() : narrator.speak(`${claim.question} ${source?.relevance ?? ""}`)}>{narrator.state === "speaking" ? `■ ${tr(language, "Parar narração", "Stop narration")}` : `🔊 ${tr(language, "Ouvir pergunta e contexto", "Listen to question and context")}`}</button><NarrationStatus state={narrator.state} language={language} voiceName={narrator.voiceName} compact /><div className="human-note">{tr(language, "A plataforma apresenta fontes e explica limites, mas não escolhe por você.", "The platform presents sources and explains limitations, but does not choose for you.")}</div></aside>
+        <StepIntro eyebrow={t("step3")} title={t("evidenceTitle")} lead={t("evidenceLead")} />
+        <section className="evidence-grid"><div className="evidence-panel"><span className="panel-label">{t("selectedClaim")}</span><blockquote>“{claim.text}”</blockquote><div className="source-heading"><div><span className="panel-label">{t("sourcesFound")}</span><p>{t("selectUpToThree")}</p></div><strong aria-live="polite">{t("selectedSourceCount", { count: selectedSources.length })}</strong></div><div className="source-results">{relatedSources.map((item) => <div key={item.id} className={`source-result ${selectedSourceIds.includes(item.id) ? "selected" : ""}`}><input type="checkbox" aria-label={item.title} checked={selectedSourceIds.includes(item.id)} onChange={() => toggleSource(item.id)} /><button type="button" onClick={() => selectSource(item.id)} aria-pressed={source?.id === item.id}><span>{item.authorOrInstitution || t("unidentified")}</span><strong>{item.title}</strong><small>{item.publishedAt || t("notReported")}</small></button>{selectedSourceIds.includes(item.id) && <button type="button" className="primary-source" onClick={() => setSelectedSourceId(item.id)}>{source?.id === item.id ? t("primarySource") : t("useAsPrimary")}</button>}</div>)}</div>{source && <SourceEditor source={source} language={language} editedFields={sourceEditedFields[source.id] ?? []} onChange={updateSource} />}{!sourceValid && <p className="field-error" role="alert">{hasDuplicateSources ? t("duplicateSource") : t("invalidUrl")}</p>}<label className="source-notes">{t("sourceNotes")}<textarea value={sourceNotes} onChange={(event) => setSourceNotes(event.target.value)} placeholder={t("sourceNotesPlaceholder")} /></label></div>
+          <aside className="support-panel"><span className="panel-label">{t("yourAssessment")}</span><h2>{t("supportsQuestion")} <RequiredMark language={language} /></h2><ol className="guided-questions"><li>{t("q1")}</li><li>{t("q2")}</li><li>{t("q3")}</li><li>{t("q4")}</li><li>{t("q5")}</li></ol><div className="support-options">{supportOptions.map((item) => <button type="button" key={item.id} className={support === item.id ? "selected" : ""} onClick={() => setSupport(item.id)} aria-pressed={support === item.id}><i>{support === item.id ? "✓" : ""}</i>{item.label}</button>)}</div><label className="support-justification" htmlFor="support-justification">{t("justification")} <RequiredMark language={language} /><textarea id="support-justification" required aria-invalid={Boolean(support && supportJustification.trim().length < 3)} aria-describedby="justification-help" value={supportJustification} onChange={(event) => setSupportJustification(event.target.value)} placeholder={t("justificationPlaceholder")} /><small id="justification-help">{t("justificationHelp")}</small></label><NarrationControls narrator={narrator} language={language} text={`${t("q1")} ${t("q2")} ${t("q3")} ${t("q4")} ${t("q5")} ${source?.relationSummary ?? ""}`} label={t("listenEvidence")} /><NarrationStatus state={narrator.state} language={language} voiceName={narrator.voiceName} compact /><div className="human-note">{t("platformDoesNotChoose")}</div></aside>
         </section>
-        <Actions back={() => setStep(2)} language={language}><button className="primary-button" disabled={!support || !source} onClick={() => setStep(4)}>{tr(language, "Continuar para a decisão", "Continue to decision")}<span>→</span></button></Actions>
+        {selectedSources.length > 1 && <SourceComparison sources={selectedSources} language={language} notes={comparisonNotes} onChange={(field, value) => setComparisonNotes((current) => ({ ...current, [field]: value }))} />}
+        <Actions back={() => setStep(2)} language={language}><button className="primary-button" disabled={!sourceValid || !support || supportJustification.trim().length < 3} onClick={() => setStep(4)}>{t("continueDecision")}<span>→</span></button></Actions>
       </>}
 
-      {step === 4 && <>
-        <StepIntro eyebrow={tr(language, "ETAPA 4 DE 5", "STEP 4 OF 5")} title={tr(language, "O que você fará antes de publicar?", "What will you do before publishing?")} lead={tr(language, "Você continua responsável pela decisão editorial final.", "You remain responsible for the final editorial decision.")} />
-        <section className="decision-grid">{actionOptions[language].map((item) => <button key={item.id} className={action === item.id ? "selected" : ""} onClick={() => setAction(item.id)}><span>{item.icon}</span><div><h3>{item.title}</h3><p>{item.description}</p></div><i>{action === item.id ? "✓" : "→"}</i></button>)}</section>
-        <div className="responsibility-note"><span>!</span><p><strong>{tr(language, "A decisão é sua.", "The decision is yours.")}</strong> {tr(language, "O Proof Before Post orienta seu raciocínio; não aprova a publicação.", "Proof Before Post guides your reasoning; it does not approve publication.")}</p></div>
-        <Actions back={() => setStep(3)} language={language}><button className="primary-button" disabled={!action} onClick={() => { setRevised(draft); setStep(5); }}>{tr(language, "Revisar o conteúdo", "Revise the content")}<span>→</span></button></Actions>
+      {step === 4 && claim && source && <>
+        <StepIntro eyebrow={t("step4")} title={t("decisionTitle")} lead={t("decisionLead")} />
+        <section className="decision-grid">{actionOptions.map((item) => <button type="button" key={item.id} className={action === item.id ? "selected" : ""} onClick={() => setAction(item.id)} aria-pressed={action === item.id}><span>{item.icon}</span><div><h3>{item.title}</h3><p>{item.description}</p>{action === item.id && <small><b>{t("consequence")}:</b> {previewRevision(draft, claim, source, item.id, language)}</small>}</div><i>{action === item.id ? "✓" : "→"}</i></button>)}</section>
+        <div className="responsibility-note"><span>!</span><p><strong>{t("decisionYours")}</strong> {t("decisionNote")}</p></div>
+        <Actions back={() => setStep(3)} language={language}><button className="primary-button" disabled={!action} onClick={continueToRevision}>{t("reviseContent")}<span>→</span></button></Actions>
       </>}
 
-      {step === 5 && <>
-        <StepIntro eyebrow={tr(language, "REVISÃO FINAL", "FINAL REVISION")} title={tr(language, "Torne a mudança visível", "Make the change visible")} lead={tr(language, "Edite com suas próprias palavras e registre o que mudou na sua conclusão.", "Edit in your own words and record what changed in your conclusion.")} />
-        <section className="revision-grid"><div className="version-card original"><span>{tr(language, "RASCUNHO ORIGINAL", "ORIGINAL DRAFT")}</span><p>{draft}</p></div><div className="version-card revised"><div className="version-label"><span>{tr(language, "VERSÃO REVISADA", "REVISED DRAFT")}</span>{guided && <button onClick={() => setRevised(demoRevision[language])}>{tr(language, "Usar revisão demonstrativa", "Use transparent demo revision")}</button>}</div><textarea value={revised} onChange={(event) => setRevised(limitCharacters(event.target.value, MAX_CHARACTERS, language))} aria-label={tr(language, "Versão revisada", "Revised draft")} /></div></section>
-        <section className="reflection-card"><label>{tr(language, "O que mudou na sua conclusão?", "What changed in your conclusion?")}</label><div>{reflectionOptions[language].map((item) => <button key={item.id} className={reflection === item.id ? "selected" : ""} onClick={() => setReflection(item.id)}>{reflection === item.id ? "✓ " : ""}{item.label}</button>)}</div></section>
-        <Actions back={() => setStep(4)} language={language}><button className="primary-button" disabled={!revised.trim() || !reflection} onClick={() => setStep(6)}>{tr(language, "Criar meu Recibo de Evidências", "Create my Evidence Receipt")}<span>→</span></button></Actions>
+      {step === 5 && claim && source && <>
+        <StepIntro eyebrow={t("step5")} title={t("revisionTitle")} lead={t("revisionLead")} />
+        <div className="revision-tabs" role="tablist" aria-label={t("revisionTitle")}><button id="revision-tab-original" role="tab" aria-controls="revision-panel-original" aria-selected={revisionTab === "original"} tabIndex={revisionTab === "original" ? 0 : -1} className={revisionTab === "original" ? "active" : ""} onKeyDown={(event) => handleTabKey(event, "original", setRevisionTab)} onClick={() => setRevisionTab("original")}>{t("originalDraft")}</button><button id="revision-tab-revised" role="tab" aria-controls="revision-panel-revised" aria-selected={revisionTab === "revised"} tabIndex={revisionTab === "revised" ? 0 : -1} className={revisionTab === "revised" ? "active" : ""} onKeyDown={(event) => handleTabKey(event, "revised", setRevisionTab)} onClick={() => setRevisionTab("revised")}>{t("revisedDraft")}</button></div>
+        <section className={`revision-grid tab-${revisionTab}`}><div id="revision-panel-original" role="tabpanel" aria-labelledby="revision-tab-original" className="version-card original"><span>{t("originalDraft")}</span><p className="diff-text">{diff.original.map((part, index) => part.kind === "removed" ? <mark className="diff-removed" key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>)}</p></div><div id="revision-panel-revised" role="tabpanel" aria-labelledby="revision-tab-revised" className="version-card revised"><div className="version-label"><span>{t("revisedDraft")} <RequiredMark language={language} /></span>{guided && <button onClick={() => { setRevised(guidedDemo[language].revision); setRevisionOrigin("guided"); }}>{t("useDemoRevision")}</button>}</div><p className="diff-text revised-preview" aria-hidden="true">{diff.revised.map((part, index) => part.kind === "same" ? <span key={index}>{part.text}</span> : <mark className={part.kind === "pending" ? "diff-pending" : "diff-added"} key={index}>{part.text}</mark>)}</p><textarea ref={revisionRef} required value={revised} onSelect={(event) => setSelectionRange({ start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })} onChange={(event) => { setRevised(event.target.value); setCitations((items) => reanchorCitations(event.target.value, items)); setRevisionOrigin("manual"); }} aria-label={t("revisionLabel")} aria-invalid={revisedExcess > 0} /><div className={`draft-meta ${revisedCount >= 1400 ? "near-limit" : ""}`}><span>{t("maxCharacters")}</span><strong aria-live="polite">{t("characterCounter", { count: formatNumber(language, revisedCount), maximum: formatNumber(language, MAX_CHARACTERS) })}</strong><small>{t("characterCountingHelp")}</small>{revisedExcess > 0 && <p className="field-error" role="alert">{t("charactersOverLimit", { count: formatNumber(language, revisedExcess) })}</p>}</div></div></section>
+        <div className="traceability-note"><span>↗</span><p>{t("traceability")} <a href={source.url} target="_blank" rel="noreferrer">{t("openSupportingSource")}</a></p></div><div className="diff-legend"><span><i className="removed" />{t("removedLegend")}</span><span><i className="added" />{t("addedLegend")}</span><span><i className="pending" />{t("pendingLegend")}</span></div>
+        <CitationPreview language={language} text={revised} sources={selectedSources} citations={citations} hasUnreferencedContext={hasUnreferencedContext} />
+        <CitationEditor language={language} sources={selectedSources} citations={citations} sourceIds={citationSourceIds} note={citationNote} error={citationError} onSources={setCitationSourceIds} onNote={setCitationNote} onAdd={addCitation} onRemove={(id) => setCitations((items) => items.filter((item) => item.id !== id))} />
+        <section className="translation-card"><div><strong>{t("translationCopy")}</strong><p>{t("translationOriginalPreserved")}</p></div><button className="secondary-button" disabled={translationState === "loading"} onClick={generateTranslation}>{translationState === "loading" ? t("generatingTranslation") : t("translationCopy")}</button>{translationState === "error" && <p className="field-error" role="alert">{t("translationFailed")}</p>}{translatedDraft && <label>{t("translatedCopy")}<textarea value={translatedDraft} onChange={(event) => setTranslatedDraft(event.target.value)} /></label>}</section>
+        <section className="reflection-card"><label>{t("whatChanged")}</label><div>{reflectionOptions.map((item) => <button type="button" key={item.id} className={reflection === item.id ? "selected" : ""} onClick={() => setReflection(item.id)} aria-pressed={reflection === item.id}>{reflection === item.id ? "✓ " : ""}{item.label}</button>)}</div></section>
+        <Checklist language={language} checked={checklist} toggle={(id) => setChecklist((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id])} />
+        {pending && <section className="pending-card"><h3>{t("pendingReviewTitle")}</h3><p>{t("pendingReviewLead")}</p><label><input type="checkbox" checked={pendingAcknowledged} onChange={(event) => setPendingAcknowledged(event.target.checked)} />{t("pendingAcknowledge")}</label></section>}
+        <Actions back={() => setStep(4)} language={language}><button className="primary-button" disabled={!revised.trim() || !reflection || revisedCount > MAX_CHARACTERS || !checklistComplete || (pending && !pendingAcknowledged)} onClick={() => setStep(6)}>{t("createReceipt")}<span>→</span></button></Actions>
       </>}
 
-      {step === 6 && <>
-        <StepIntro eyebrow={tr(language, "ETAPA 5 DE 5", "STEP 5 OF 5")} title={tr(language, "Seu processo, documentado", "Your process, documented")} lead={tr(language, "Um registro transparente das decisões tomadas antes da publicação.", "A transparent record of the decisions made before publication.")} />
-        <section className="receipt-wrap"><article className="receipt-card" id="receipt"><div className="receipt-header"><div><span className="brand-mark"><span /></span><div><h2>{receiptTitle}</h2><p>{tr(language, "Registro de verificação pré-publicação", "Pre-publication verification record")}</p></div></div><time>{new Intl.DateTimeFormat(language === "pt" ? "pt-BR" : "en-US").format(new Date())}</time></div><div className="receipt-section"><span>{tr(language, "AFIRMAÇÃO EXAMINADA", "CLAIM EXAMINED")}</span><blockquote>“{claim?.text}”</blockquote></div><div className="receipt-two"><div><span>{tr(language, "FONTE CONSULTADA", "SOURCE CONSULTED")}</span><strong>{source?.publisher ?? "—"}</strong><p>{source?.title ?? "—"} · {source?.publishedAt || "—"}</p>{source?.url && <a href={source.url} target="_blank" rel="noreferrer">{tr(language, "Abrir fonte original ↗", "Open original source ↗")}</a>}</div><div><span>{tr(language, "RELAÇÃO", "RELATIONSHIP")}</span><strong>{supportLabel}</strong><p>{tr(language, "Avaliação feita pelo criador", "Assessment made by the creator")}</p></div></div><div className="receipt-two"><div><span>{tr(language, "DECISÃO EDITORIAL", "EDITORIAL DECISION")}</span><strong>{actionLabel}</strong></div><div><span>{tr(language, "APRENDIZADO", "LEARNING")}</span><strong>{reflectionLabel}</strong></div></div><div className="receipt-change"><span>{tr(language, "MUDANÇA REALIZADA", "CHANGE MADE")}</span><div><p>{draft}</p><i>→</i><p>{revised}</p></div></div><div className="receipt-disclaimer"><span>i</span><p><strong>{tr(language, "Este recibo não certifica que o conteúdo é verdadeiro.", "This receipt does not certify that the content is true.")}</strong><br />{tr(language, "Ele documenta o processo de verificação e as decisões do criador.", "It documents the creator's verification process and decisions.")}</p></div></article><aside className="receipt-actions"><h3>{tr(language, "Pronto para compartilhar o processo", "Ready to share the process")}</h3><p>{tr(language, "Baixe o recibo como imagem ou copie um resumo. O conteúdo continua sendo sua responsabilidade.", "Download the receipt as an image or copy a summary. You remain responsible for the content.")}</p><button className="primary-button" onClick={downloadReceipt}>↓ {tr(language, "Baixar como imagem", "Download as image")}</button><button className="secondary-button" onClick={copyReceipt}>{copied ? tr(language, "Resumo copiado ✓", "Summary copied ✓") : tr(language, "Copiar resumo", "Copy summary")}</button><button className="text-button" onClick={() => start(false)}>{tr(language, "Revisar outro rascunho", "Review another draft")}</button></aside></section>
+      {step === 6 && claim && source && <>
+        <StepIntro eyebrow={t("receiptEyebrow")} title={t("receiptPageTitle")} lead={t("receiptPageLead")} />
+        <section className="receipt-wrap"><ReceiptDocument language={language} claim={claim} sources={selectedSources} source={source} supportLabel={supportLabel} supportJustification={supportJustification} actionLabel={actionLabel} reflectionLabel={reflectionLabel} comparisonNotes={comparisonNotes} citations={citations} checklist={checklist} pending={pending} status={sessionStatus} draft={draft} revised={revised} hasUnreferencedContext={hasUnreferencedContext} /><aside className="receipt-actions"><h3>{t("readyShare")}</h3><p>{t("receiptHelp")}</p><button className="primary-button" disabled={downloadState === "loading" || pdfState === "loading" || copyState === "loading"} aria-busy={downloadState === "loading"} onClick={downloadReceipt}>↓ {downloadState === "loading" ? t("preparingDownload") : t("downloadSummary")}</button><p className={`download-status ${downloadState}`} role="status" aria-live="polite">{downloadState === "success" ? t("downloadSuccess") : downloadState === "error" ? t("downloadError") : ""}</p><button className="secondary-button" disabled={pdfState === "loading" || downloadState === "loading" || copyState === "loading"} aria-busy={pdfState === "loading"} onClick={downloadPdf}>↓ {pdfState === "loading" ? t("preparingPdf") : t("downloadPdf")}</button><p className={`download-status ${pdfState}`} role="status" aria-live="polite">{pdfState === "success" ? t("pdfSuccess") : pdfState === "error" ? t("pdfError") : ""}</p><button className="secondary-button" disabled={copyState === "loading" || downloadState === "loading" || pdfState === "loading"} aria-busy={copyState === "loading"} onClick={copyReceipt}>{copyState === "loading" ? t("copying") : copyState === "success" ? t("copied") : t("copySummary")}</button><p className={`download-status ${copyState}`} role="status" aria-live="polite">{copyState === "success" ? t("copySuccess") : copyState === "error" ? t("copyError") : ""}</p><button className="text-button" onClick={() => start(false)}>{t("reviewAnother")}</button></aside></section>
       </>}
     </main>
   );
 }
 
-function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) { const words = text.split(" "); let line = ""; for (const word of words) { const test = `${line}${word} `; if (ctx.measureText(test).width > maxWidth && line) { ctx.fillText(line, x, y); line = `${word} `; y += lineHeight; } else line = test; } ctx.fillText(line, x, y); return y; }
+function hasUnreferencedAddedContext(parts: DiffPart[], citations: RevisionCitation[]) {
+  let cursor = 0;
+  for (const part of parts) {
+    const start = cursor;
+    const end = start + part.text.length;
+    cursor = end;
+    if (part.kind !== "added" || !part.text.trim()) continue;
+    const covered = citations.some((citation) => !citation.broken && citation.revisedTextStart <= start && citation.revisedTextEnd >= end);
+    if (!covered) return true;
+  }
+  return false;
+}
+
+function handleTabKey<T extends string>(event: React.KeyboardEvent<HTMLButtonElement>, current: T, setCurrent: (value: T) => void) {
+  const tabs = Array.from(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []);
+  const currentIndex = tabs.indexOf(event.currentTarget);
+  if (currentIndex < 0 || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+  const next = tabs[nextIndex];
+  const value = next.id.split("-").at(-1) as T;
+  if (value !== current) setCurrent(value);
+  next.focus();
+}
+
+function RequiredMark({ language }: { language: Language }) {
+  return <span className="required-mark" title={translate(language, "requiredField")} aria-label={translate(language, "requiredField")}>*</span>;
+}
+
+function PreviousStepsSummary({ language, draft, claim, sources, support, decision }: { language: Language; draft: string; claim: string; sources: ResearchSource[]; support: string; decision: string }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  return <details className="previous-summary"><summary>{t("previousStepsSummary")}</summary><div><ReceiptSection label={t("progressDraft")} value={draft || "—"} />{claim && <ReceiptSection label={t("progressClaim")} value={claim} />}{sources.length > 0 && <ReceiptSection label={t("progressEvidence")} value={sources.map((item) => item.title).join(" · ")} />}{support && <ReceiptSection label={t("creatorAssessment")} value={support} />}{decision && <ReceiptSection label={t("editorialDecision")} value={decision} />}</div></details>;
+}
+
+function ReceiptDocument({ language, claim, sources, source, supportLabel, supportJustification, actionLabel, reflectionLabel, comparisonNotes, citations, checklist, pending, status, draft, revised, hasUnreferencedContext }: { language: Language; claim: Claim; sources: ResearchSource[]; source: ResearchSource; supportLabel: string; supportJustification: string; actionLabel: string; reflectionLabel: string; comparisonNotes: ComparisonNotes; citations: RevisionCitation[]; checklist: string[]; pending: boolean; status: SessionStatus; draft: string; revised: string; hasUnreferencedContext: boolean }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  const locale = language === "pt" ? "pt-BR" : "en-US";
+  return <article className="receipt-card" id="receipt"><div className="receipt-header"><div><span className="brand-mark"><span /></span><div><h2>{t("receiptTitle")}</h2><p>{t("receiptSubtitle")}</p></div></div><time>{new Intl.DateTimeFormat(locale).format(new Date())}</time></div><div className="receipt-metadata"><span>{t("receiptFieldLanguage")}: {language === "pt" ? "Português" : "English"}</span><span className={`receipt-status ${status}`}>{localizedStatus(language, status)}</span></div><ReceiptSection label={t("claimExamined")} value={`“${claim.text}”`} />{sources.map((item, index) => <section className="receipt-source" key={item.id}><header><span>{t("sourceConsulted")} {index + 1}</span><a href={item.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a></header><h3>{item.title}</h3><div className="receipt-source-grid"><ReceiptSection label={t("authorInstitution")} value={item.authorOrInstitution || "—"} /><ReceiptSection label={t("publishedDate")} value={item.publishedAt || "—"} /><ReceiptSection label={t("sourceType")} value={item.sourceType || "—"} /><ReceiptSection label={t("sourceOrigin")} value={t(item.provenance === "user" ? "userEdited" : item.provenance === "demo" ? "guidedSource" : "researchSource")} /><ReceiptSection label={t("methodology")} value={item.methodology || "—"} /><ReceiptSection label={t("sample")} value={item.sample || "—"} /><ReceiptSection label={t("geography")} value={item.geography || "—"} /><ReceiptSection label={t("keyFindings")} value={item.keyFindings || "—"} /><ReceiptSection label={t("measuredReported")} value={item.measuredOrReported} /><ReceiptSection label={t("doesNotEstablish")} value={item.doesNotEstablish} /><ReceiptSection label={t("contextLimitations")} value={item.contextLimitations} /><ReceiptSection label={t("relationship")} value={item.relationSummary} /><ReceiptSection label={t("accessDate")} value={item.accessedAt} /></div></section>)}<div className="receipt-decision"><ReceiptSection label={t("creatorAssessment")} value={supportLabel} /><ReceiptSection label={t("justificationLabel")} value={supportJustification} /><ReceiptSection label={t("editorialDecision")} value={actionLabel} /><ReceiptSection label={t("reflectionLabel")} value={reflectionLabel} /></div><ReceiptSection label={t("measuredReported")} value={source.measuredOrReported} /><ReceiptSection label={t("receiptComparison")} value={Object.values(comparisonNotes).filter((value) => value.trim()).join(" · ") || "—"} /><section className="receipt-traceability"><span>{t("receiptFieldCitations")}</span>{citations.length > 0 ? <ol>{citations.map((item) => <li className={item.broken ? "broken" : ""} key={item.id}>“{item.citedText}” — {sources.find((candidate) => candidate.id === item.sourceId)?.title || t("citationBroken")}{item.note ? ` · ${item.note}` : ""}</li>)}</ol> : <p>{t("noPassageReferences")}</p>}{hasUnreferencedContext && <p className="pending-inline">{t("contextWithoutReference")}</p>}</section><section className={`receipt-pending ${pending ? "has-pending" : ""}`}><ReceiptSection label={t("receiptFieldPending")} value={pending ? t("pendingRecorded") : t("noPendingRecorded")} /></section><ReceiptSection label={t("receiptFieldChecklist")} value={checklist.length === CHECKLIST_IDS.length ? t("yes") : t("no")} /><div className="receipt-change"><span>{t("changeMade")}</span><div><p>{draft}</p><i aria-hidden="true">→</i><p>{revised}</p></div></div><div className="receipt-disclaimer"><span aria-hidden="true">i</span><p><strong>{t("receiptDisclaimer")}</strong></p></div></article>;
+}
+
+function previewRevision(draft: string, claim: Claim, source: ResearchSource, action: EditorialAction, language: Language) {
+  const revised = buildSuggestedRevision(draft, claim, source, action, language);
+  const difference = diffDrafts(draft, revised, action === "research").revised.find((part) => part.kind !== "same");
+  return difference?.text || revised;
+}
 
 function formatNumber(language: Language, value: number) { return new Intl.NumberFormat(language === "pt" ? "pt-BR" : "en-US").format(value); }
 
-function Header({ language, setLanguage, home, compact = false }: { language: Language; setLanguage: (value: Language) => void; home: () => void; compact?: boolean }) { return <header className={`site-header ${compact ? "compact" : ""}`}><button className="brand" onClick={home} aria-label={tr(language, "Início do Proof Before Post", "Proof Before Post home")}><span className="brand-mark"><span /></span><span>Proof Before Post</span></button>{!compact && <nav aria-label={tr(language, "Navegação principal", "Main navigation")}><a href="#how">{tr(language, "Como funciona", "How it works")}</a><a href="#why">{tr(language, "Por que importa", "Why it matters")}</a></nav>}<div className="header-actions">{!compact && <span className="privacy-pill"><i />{tr(language, "Privacidade desde o início", "Private by design")}</span>}<div className="language-toggle" aria-label={tr(language, "Idioma", "Language")}><button className={language === "pt" ? "active" : ""} aria-pressed={language === "pt"} onClick={() => setLanguage("pt")}>PT</button><button className={language === "en" ? "active" : ""} aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</button></div></div></header>; }
+function Header({ language, setLanguage, home, compact = false }: { language: Language; setLanguage: (value: Language) => void; home: () => void; compact?: boolean }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  return <header className={`site-header ${compact ? "compact" : ""}`}><button className="brand" onClick={home} aria-label={t("home")}><span className="brand-mark"><span /></span><span>Proof Before Post</span></button>{!compact && <nav aria-label={t("mainNavigation")}><a href="#how">{t("howItWorks")}</a><a href="#why">{t("whyItMatters")}</a></nav>}<div className="header-actions">{!compact && <span className="privacy-pill"><i />{t("privateByDesign")}</span>}<div className="language-toggle" aria-label={t("language")}><button className={language === "pt" ? "active" : ""} aria-pressed={language === "pt"} onClick={() => setLanguage("pt")}>PT</button><button className={language === "en" ? "active" : ""} aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</button></div></div></header>;
+}
 
-function Landing({ language, setLanguage, start }: { language: Language; setLanguage: (value: Language) => void; start: (guided: boolean) => void }) { return <main className="app-shell home-page"><Header language={language} setLanguage={setLanguage} home={() => undefined} /><section className="hero"><div className="hero-copy"><p className="eyebrow"><span />{tr(language, "Educação Midiática e Informacional", "Media & Information Literacy")}</p><h1><span>{tr(language, "Pare.", "Pause.")}</span><br />{tr(language, "Confira as evidências.", "Check the evidence.")}<br /><em>{tr(language, "Depois publique.", "Then post.")}</em></h1><p className="hero-subtitle">{tr(language, "Uma prática guiada que ajuda jovens criadores a fortalecer as evidências de seus conteúdos — sem deixar a tecnologia decidir a verdade por eles.", "A guided practice that helps young creators strengthen the evidence behind their content—without letting technology decide the truth for them.")}</p><div className="hero-actions"><button className="primary-button" onClick={() => start(true)}>{tr(language, "Testar o exemplo guiado", "Try the guided example")}<span>→</span></button><button className="secondary-button" onClick={() => start(false)}>{tr(language, "Revisar meu rascunho", "Review my own draft")}</button></div><div className="trust-row"><span>✓ {tr(language, "Sem cadastro", "No account required")}</span><span>✓ {tr(language, "Sem armazenamento permanente", "No permanent draft storage")}</span><span>✓ {tr(language, "Fontes reais na pesquisa ao vivo", "Real sources in live research")}</span></div></div><HeroVisual language={language} /></section><section className="proof-strip" id="why"><div className="stat-block"><strong>62<span>%</span></strong><p>{tr(language, "dos criadores pesquisados pela UNESCO não realizavam uma verificação rigorosa e sistemática antes de compartilhar conteúdo.", "of creators surveyed by UNESCO did not conduct rigorous, systematic fact-checking before sharing content.")}</p></div><div className="source-block"><span>↗</span><div><strong>{tr(language, "Pesquisa UNESCO · 500 criadores · 45 países", "UNESCO survey · 500 creators · 45 countries")}</strong><small>{tr(language, "O problema existe. A decisão continua sendo humana.", "The problem is real. The decision remains human.")}</small></div></div></section><section className="how-section" id="how"><div><p className="eyebrow"><span />{tr(language, "COMO FUNCIONA", "HOW IT WORKS")}</p><h2>{tr(language, "Uma decisão que ainda pode mudar", "A decision you can still change")}</h2><p>{tr(language, "O Proof Before Post intervém antes que o conteúdo chegue ao público.", "Proof Before Post intervenes before content reaches an audience.")}</p></div><div className="step-row"><article><span>01</span><div className="step-symbol">“ ”</div><h3>{tr(language, "Encontre a afirmação", "Spot the claim")}</h3></article><article><span>02</span><div className="step-symbol">⌕</div><h3>{tr(language, "Examine as fontes", "Examine the sources")}</h3></article><article><span>03</span><div className="step-symbol">✓</div><h3>{tr(language, "Tome sua decisão", "Make your decision")}</h3></article></div></section></main>; }
+function Landing({ language, setLanguage, start, sessions, historyReady, resume, duplicate, remove, clear }: { language: Language; setLanguage: (value: Language) => void; start: (guided: boolean) => void; sessions: ReviewSession[]; historyReady: boolean; resume: (session: ReviewSession) => void; duplicate: (session: ReviewSession) => void; remove: (id: string) => void; clear: () => void }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  return <main className="app-shell home-page"><Header language={language} setLanguage={setLanguage} home={() => undefined} /><section className="hero"><div className="hero-copy"><p className="eyebrow"><span />{t("mediaLiteracy")}</p><h1><span>{t("pause")}</span><br />{t("checkEvidence")}<br /><em>{t("thenPost")}</em></h1><p className="hero-subtitle">{t("heroSubtitle")}</p><div className="hero-actions"><button className="primary-button" onClick={() => start(true)}>{t("tryDemo")}<span>→</span></button><button className="secondary-button" onClick={() => start(false)}>{t("reviewMine")}</button></div><div className="trust-row"><span>✓ {t("noAccount")}</span><span>✓ {t("noPermanentStorage")}</span><span>✓ {t("realSources")}</span></div></div><HeroVisual language={language} /></section><section className="review-paths" aria-label={t("inputMethod")}><article className="review-path demo"><span>{t("demoPathLabel")}</span><h2>{t("demoPathTitle")}</h2><p>{t("demoPathDescription")}</p><button className="secondary-button" onClick={() => start(true)}>{t("startDemoPath")} <span aria-hidden="true">→</span></button></article><article className="review-path real"><span>{t("realPathLabel")}</span><h2>{t("realPathTitle")}</h2><p>{t("realPathDescription")}</p><button className="primary-button" onClick={() => start(false)}>{t("startRealPath")} <span aria-hidden="true">→</span></button></article></section><p className="local-storage-note"><span aria-hidden="true">i</span>{t("localStorageDetail")}</p>{historyReady && <HistoryPanel language={language} sessions={sessions} resume={resume} duplicate={duplicate} remove={remove} clear={clear} />}<section className="proof-strip" id="why"><div className="stat-block"><strong>62<span>%</span></strong><p>{t("unescoStat")}</p></div><div className="source-block"><span aria-hidden="true">↗</span><div><strong>{t("unescoSurvey")}</strong><small>{t("humanDecision")}</small></div></div></section><section className="how-section" id="how"><div><p className="eyebrow"><span />{t("howItWorks")}</p><h2>{t("decisionCanChange")}</h2><p>{t("intervention")}</p></div><div className="step-row"><article><span>01</span><div className="step-symbol" aria-hidden="true">“ ”</div><h3>{t("findClaim")}</h3></article><article><span>02</span><div className="step-symbol" aria-hidden="true">⌕</div><h3>{t("examineSources")}</h3></article><article><span>03</span><div className="step-symbol" aria-hidden="true">✓</div><h3>{t("makeDecision")}</h3></article></div></section></main>;
+}
 
-function HeroVisual({ language }: { language: Language }) { return <div className="hero-visual" aria-label={tr(language, "Ilustração de revisão de evidências", "Evidence review illustration")}><div className="visual-glow" /><div className="evidence-card card-back"><div className="fake-lines"><i /><i /><i /></div></div><div className="evidence-card card-main"><div className="card-top"><span className="doc-icon">▤</span><span>{tr(language, "RASCUNHO", "DRAFT")}</span><i>•••</i></div><p>{tr(language, "“A UNESCO provou que a maioria dos criadores espalha desinformação...”", "“UNESCO proved that most creators spread misinformation...”")}</p><div className="claim-callout"><span>!</span><div><strong>{tr(language, "CONCLUSÃO SEM APOIO", "UNSUPPORTED CONCLUSION")}</strong><small>{tr(language, "O que a fonte realmente mediu?", "What did the source actually measure?")}</small></div></div><div className="card-status"><span>01</span><i /><b>{tr(language, "AFIRMAÇÃO ENCONTRADA", "CLAIM FOUND")}</b></div></div><div className="receipt-mini"><span className="check">✓</span><div><strong>{tr(language, "FONTE EXAMINADA", "SOURCE EXAMINED")}</strong><small>{tr(language, "Contexto adicionado antes de publicar", "Context added before publishing")}</small></div></div></div>; }
+function HeroVisual({ language }: { language: Language }) {
+  const example = guidedDemo[language].claims[0];
+  return <div className="hero-visual" aria-label={translate(language, "evidenceTitle")}><div className="visual-glow" /><div className="evidence-card card-back"><div className="fake-lines"><i /><i /><i /></div></div><div className="evidence-card card-main"><div className="card-top"><span className="doc-icon">▤</span><span>{translate(language, "progressDraft")}</span><i>•••</i></div><p>“{example.text}”</p><div className="claim-callout"><span>!</span><div><strong>{example.category}</strong><small>{example.question}</small></div></div><div className="card-status"><span>01</span><i /><b>{translate(language, "progressClaim")}</b></div></div><div className="receipt-mini"><span className="check">✓</span><div><strong>{translate(language, "selectedSource")}</strong><small>{translate(language, "humanDecision")}</small></div></div></div>;
+}
 
-function Progress({ step, labels, language }: { step: number; labels: string[]; language: Language }) { const current = step === 5 ? 4 : Math.min(step, 5); return <div className="progress-wrap" aria-label={tr(language, "Progresso da revisão", "Review progress")}>{labels.map((label, index) => <div className="progress-fragment" key={label}><div className={`progress-label ${index + 1 <= current ? "done" : "muted"}`}><strong>{index + 1 < current ? "✓" : String(index + 1).padStart(2, "0")}</strong><span>{label}</span></div>{index < labels.length - 1 && <div className={`progress-line ${index + 1 < current ? "filled" : ""}`} />}</div>)}</div>; }
+function Progress({ step, labels, language }: { step: number; labels: string[]; language: Language }) {
+  const current = Math.min(step, 5);
+  return <div className="progress-wrap" role="list" aria-label={translate(language, "reviewProgress")}>{labels.map((label, index) => <div className="progress-fragment" role="listitem" aria-current={index + 1 === current ? "step" : undefined} key={label}><div className={`progress-label ${index + 1 <= current ? "done" : "muted"}`}><strong aria-hidden="true">{index + 1 < current ? "✓" : String(index + 1).padStart(2, "0")}</strong><span>{label}</span></div>{index < labels.length - 1 && <div aria-hidden="true" className={`progress-line ${index + 1 < current ? "filled" : ""}`} />}</div>)}</div>;
+}
 
 function StepIntro({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: string }) { return <section className="editor-intro"><p className="eyebrow"><span />{eyebrow}</p><h1>{title}</h1><p>{lead}</p></section>; }
 
-function InfoCard({ language }: { language: Language }) { return <aside className="next-card"><div className="orbit-icon"><span>?</span></div><h2>{tr(language, "O que acontece agora?", "What happens next?")}</h2><ol><li><span>1</span>{tr(language, "Pesquisamos fontes atuais para as afirmações verificáveis.", "We research current sources for verifiable claims.")}</li><li><span>2</span>{tr(language, "Você abre as fontes e escolhe uma afirmação.", "You open the sources and choose one claim.")}</li><li><span>3</span>{tr(language, "Você decide o que deve mudar.", "You decide what should change.")}</li></ol><div className="small-note"><span>i</span>{tr(language, "Nenhuma fonte será inventada. Se a pesquisa falhar, o site informará claramente.", "No source will be invented. If research fails, the site will say so clearly.")}</div></aside>; }
+function InfoCard({ language }: { language: Language }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  return <aside className="next-card"><div className="orbit-icon"><span>?</span></div><h2>{t("whatNext")}</h2><ol><li><span>1</span>{t("info1")}</li><li><span>2</span>{t("info2")}</li><li><span>3</span>{t("info3")}</li></ol><div className="small-note"><span>i</span>{t("noInventedSource")}</div></aside>;
+}
 
-function ResearchBanner({ analysis, language, onListen, narratorState, stop }: { analysis: AnalysisResult; language: Language; onListen: () => void; narratorState: NarratorState; stop: () => void }) { const active = narratorState === "speaking" || narratorState === "paused"; return <section className={`research-banner ${analysis.mode}`}><div><span>{analysis.mode === "live" ? "●" : "◆"}</span><div><strong>{analysis.mode === "live" ? tr(language, "PESQUISA AO VIVO CONCLUÍDA", "LIVE RESEARCH COMPLETED") : tr(language, "DEMONSTRAÇÃO GUIADA", "GUIDED DEMONSTRATION")}</strong><p>{analysis.researchSummary}</p><small>{analysis.mode === "live" ? tr(language, `${analysis.sources.length} fontes verificáveis encontradas`, `${analysis.sources.length} verifiable sources found`) : tr(language, "Conteúdo educativo preparado · sem pesquisa ao vivo", "Prepared learning content · no live research")}</small></div></div><button disabled={narratorState === "loading"} onClick={active ? stop : onListen}>{active ? `■ ${tr(language, "Parar", "Stop")}` : narratorState === "loading" ? tr(language, "Preparando voz…", "Preparing voice…") : `🔊 ${tr(language, "Ouvir resumo", "Listen to summary")}`}</button></section>; }
+function ResearchBanner({ analysis, language, narrator }: { analysis: AnalysisResult; language: Language; narrator: ReturnType<typeof useNarrator> }) {
+  const title = analysis.mode === "live" ? translate(language, "liveResearchDone") : translate(language, "guidedDemo");
+  const detail = analysis.mode === "live" ? translate(language, "verifiedSourcesFound", { count: analysis.sources.length }) : translate(language, "preparedNoLive");
+  return <section className={`research-banner ${analysis.mode}`}><div><span>{analysis.mode === "live" ? "●" : "◆"}</span><div><strong>{title}</strong><p>{analysis.researchSummary}</p><small>{detail}</small></div></div><NarrationControls narrator={narrator} language={language} text={analysis.researchSummary} label={translate(language, "listenSummary")} /></section>;
+}
 
-function NarrationStatus({ state, language, voiceName, compact = false }: { state: NarratorState; language: Language; voiceName: string | null; compact?: boolean }) { if (state !== "unsupported" && state !== "unavailable" && state !== "error") return null; const message = state === "unsupported" ? tr(language, "A narração não é compatível com este navegador.", "Narration is not supported by this browser.") : state === "unavailable" ? tr(language, "Este dispositivo não possui uma voz instalada para o idioma selecionado.", "This device does not have an installed voice for the selected language.") : tr(language, "A narração foi interrompida. Tente novamente ou use outro navegador.", "Narration was interrupted. Try again or use another browser."); return <p className={`narration-status ${compact ? "compact" : ""}`} role="status" aria-live="polite" title={voiceName ?? undefined}>{message}</p>; }
+function NarrationControls({ narrator, language, text, label }: { narrator: ReturnType<typeof useNarrator>; language: Language; text: string; label: string }) {
+  return <div className="narration-controls">{narrator.state === "idle" || narrator.state === "unavailable" || narrator.state === "unsupported" || narrator.state === "error" ? <button type="button" onClick={() => narrator.speak(text)}>🔊 {label}</button> : null}{narrator.state === "loading" && <button type="button" disabled>{translate(language, "preparingVoice")}</button>}{narrator.state === "speaking" && <button type="button" onClick={narrator.pause}>Ⅱ {translate(language, "pauseNarration")}</button>}{narrator.state === "paused" && <button type="button" onClick={narrator.resume}>▶ {translate(language, "resumeNarration")}</button>}{(narrator.state === "speaking" || narrator.state === "paused") && <button type="button" onClick={narrator.stop}>■ {translate(language, "stopNarration")}</button>}</div>;
+}
 
-function SourceDetails({ source, language }: { source: ResearchSource; language: Language }) { return <article className="source-details"><div><span>{tr(language, "FONTE SELECIONADA", "SELECTED SOURCE")}</span><a href={source.url} target="_blank" rel="noreferrer">{tr(language, "Abrir página original ↗", "Open original page ↗")}</a></div><h3>{source.title}</h3><p className="source-byline">{source.publisher} · {source.publishedAt || tr(language, "Data não informada", "Date not provided")}</p><dl><div><dt>{tr(language, "O que a fonte informa", "What the source reports")}</dt><dd>{source.excerpt}</dd></div><div><dt>{tr(language, "Por que ela é relevante", "Why it is relevant")}</dt><dd>{source.relevance}</dd></div></dl></article>; }
+function NarrationStatus({ state, language, voiceName, compact = false }: { state: NarratorState; language: Language; voiceName: string | null; compact?: boolean }) {
+  if (!(["unsupported", "unavailable", "error"] as NarratorState[]).includes(state)) return null;
+  const key: TranslationKey = state === "unsupported" ? "narrationUnsupported" : state === "unavailable" ? "narrationUnavailable" : "narrationError";
+  return <p className={`narration-status ${compact ? "compact" : ""}`} role="status" aria-live="polite" title={voiceName ?? undefined}>{translate(language, key)}</p>;
+}
 
-function Actions({ back, children, language }: { back: () => void; children: React.ReactNode; language: Language }) { return <div className="editor-actions"><button className="text-button" onClick={back}>← {tr(language, "Voltar", "Back")}</button>{children}</div>; }
+function SourceEditor({ source, language, editedFields, onChange }: { source: ResearchSource; language: Language; editedFields: SourceField[]; onChange: (field: SourceField, value: string) => void }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  const provenance = source.provenance === "user" ? t("userEdited") : source.provenance === "demo" ? t("guidedSource") : t("researchSource");
+  const fields: Array<{ field: SourceField; key: TranslationKey; multiline?: boolean }> = [{ field: "title", key: "sourceTitle" }, { field: "authorOrInstitution", key: "authorInstitution" }, { field: "publishedAt", key: "publishedDate" }, { field: "sourceType", key: "sourceType" }, { field: "methodology", key: "methodology", multiline: true }, { field: "sample", key: "sample", multiline: true }, { field: "geography", key: "geography", multiline: true }, { field: "keyFindings", key: "keyFindings", multiline: true }, { field: "measuredOrReported", key: "measuredReported", multiline: true }, { field: "doesNotEstablish", key: "doesNotEstablish", multiline: true }, { field: "contextLimitations", key: "contextLimitations", multiline: true }, { field: "relationSummary", key: "relationSummary", multiline: true }, { field: "url", key: "sourceUrl" }, { field: "accessedAt", key: "accessDate" }];
+  const requiredFields: SourceField[] = ["title", "measuredOrReported", "url"];
+  return <article className="source-details source-editor"><div><span>{t("selectedSource")}</span><a href={source.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a></div><p className={`source-provenance ${source.provenance}`}>{provenance}</p><div className="source-form">{fields.map(({ field, key, multiline }) => <label key={field}>{t(key)} {requiredFields.includes(field) && <RequiredMark language={language} />}{editedFields.includes(field) && <small className="edited-field">{t("userCorrectedField")}</small>}{multiline ? <textarea required={requiredFields.includes(field)} value={source[field]} onChange={(event) => onChange(field, event.target.value)} /> : <input required={requiredFields.includes(field)} type={field === "accessedAt" ? "date" : field === "url" ? "url" : "text"} value={source[field]} onChange={(event) => onChange(field, event.target.value)} placeholder={field === "authorOrInstitution" || field === "sourceType" ? t("unidentified") : undefined} />}</label>)}</div></article>;
+}
+
+function HistoryPanel({ language, sessions, resume, duplicate, remove, clear }: { language: Language; sessions: ReviewSession[]; resume: (session: ReviewSession) => void; duplicate: (session: ReviewSession) => void; remove: (id: string) => void; clear: () => void }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<SessionStatus | "all">("all");
+  const [languageFilter, setLanguageFilter] = useState<Language | "all">("all");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const status = (value: SessionStatus) => t(value === "in_progress" ? "statusInProgress" : value === "completed" ? "statusCompleted" : "statusPending");
+  const normalized = query.trim().toLocaleLowerCase(language === "pt" ? "pt-BR" : "en-US");
+  const visible = sessions.filter((session) => {
+    const claim = session.analysis?.claims.find((item) => item.id === session.selectedClaimId)?.text ?? "";
+    const matchesText = !normalized || `${session.draft} ${claim}`.toLocaleLowerCase(language === "pt" ? "pt-BR" : "en-US").includes(normalized);
+    return matchesText && (filter === "all" || session.status === filter) && (languageFilter === "all" || session.language === languageFilter);
+  }).sort((a, b) => sortOrder === "newest" ? b.updatedAt.localeCompare(a.updatedAt) : a.updatedAt.localeCompare(b.updatedAt));
+  return <section className="history-panel"><div className="history-heading"><div><span className="section-icon" aria-hidden="true">▤</span><div><h2>{t("historyTitle")}</h2><p>{t("historyLead")}</p></div></div><span className="local-badge">● {t("privateByDesign")}</span></div>{sessions.length === 0 ? <p className="history-empty">{t("noHistory")}</p> : <><div className="history-tools"><label><span>{t("historySearch")}</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("historySearchPlaceholder")} /></label><label><span>{t("historyFilter")}</span><select value={filter} onChange={(event) => setFilter(event.target.value as SessionStatus | "all")}><option value="all">{t("historyAll")}</option><option value="in_progress">{t("statusInProgress")}</option><option value="completed">{t("statusCompleted")}</option><option value="completed_with_pending">{t("statusPending")}</option></select></label><label><span>{t("historyLanguageFilter")}</span><select value={languageFilter} onChange={(event) => setLanguageFilter(event.target.value as Language | "all")}><option value="all">{t("historyAllLanguages")}</option><option value="pt">Português</option><option value="en">English</option></select></label><label><span>{t("historySort")}</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as "newest" | "oldest")}><option value="newest">{t("historyNewest")}</option><option value="oldest">{t("historyOldest")}</option></select></label></div>{visible.length === 0 ? <p className="history-empty">{t("noHistoryMatch")}</p> : <div className="history-list">{visible.map((session) => { const savedClaim = session.analysis?.claims.find((item) => item.id === session.selectedClaimId)?.text; return <article key={session.id}><div className="history-content"><div className="history-meta"><span className={`status-badge ${session.status}`}>{status(session.status)}</span><span>{session.language.toUpperCase()}</span><span>{translate(language, "historySources", { count: session.sources.length })}</span></div><strong>{savedClaim || session.draft.slice(0, 120) || "—"}</strong>{savedClaim && <p>{session.draft.slice(0, 140)}</p>}<small>{translate(language, "lastUpdated", { date: new Intl.DateTimeFormat(language === "pt" ? "pt-BR" : "en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(session.updatedAt)) })}</small></div><div className="history-actions"><button className="history-primary" onClick={() => resume(session)}>{t("continueSession")} →</button><button onClick={() => duplicate(session)}>{t("duplicateSession")}</button><button className="danger" onClick={() => remove(session.id)}>{t("deleteSession")}</button></div></article>; })}</div>}<button className="text-button danger" onClick={clear}>{t("clearHistory")}</button></>}</section>;
+}
+
+function SourceComparison({ sources, language, notes, onChange }: { sources: ResearchSource[]; language: Language; notes: ComparisonNotes; onChange: (field: keyof ComparisonNotes, value: string) => void }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  const fields: Array<{ field: keyof ComparisonNotes; key: TranslationKey }> = [{ field: "convergence", key: "convergence" }, { field: "divergences", key: "divergences" }, { field: "methodologyDifferences", key: "methodologyDifferences" }, { field: "scopeDifferences", key: "scopeDifferences" }, { field: "missingInformation", key: "missingInformation" }];
+  const rows: Array<{ key: TranslationKey; value: (source: ResearchSource) => string }> = [
+    { key: "sourceTitle", value: (item) => item.title }, { key: "authorInstitution", value: (item) => item.authorOrInstitution },
+    { key: "publishedDate", value: (item) => item.publishedAt }, { key: "sourceType", value: (item) => item.sourceType },
+    { key: "methodology", value: (item) => item.methodology }, { key: "sample", value: (item) => item.sample },
+    { key: "geography", value: (item) => item.geography }, { key: "measuredReported", value: (item) => item.measuredOrReported },
+    { key: "keyFindings", value: (item) => item.keyFindings }, { key: "contextLimitations", value: (item) => item.contextLimitations },
+    { key: "doesNotEstablish", value: (item) => item.doesNotEstablish }, { key: "relationSummary", value: (item) => item.relationSummary },
+    { key: "sourceUrl", value: (item) => item.url },
+    { key: "sourceOrigin", value: (item) => t(item.provenance === "user" ? "userEdited" : item.provenance === "demo" ? "guidedSource" : "researchSource") },
+    { key: "accessDate", value: (item) => item.accessedAt },
+  ];
+  return <section className="comparison-panel"><div className="section-heading"><span className="section-icon">⇄</span><div><h2>{t("comparisonTitle")}</h2><p>{t("comparisonHelp")}</p></div></div><div className="comparison-table" role="region" tabIndex={0} aria-label={t("comparisonTitle")}><table><thead><tr><th>{t("comparisonField")}</th>{sources.map((item, index) => <th key={item.id}><span>{translate(language, "comparisonSource", { count: index + 1 })}</span><a href={item.url} target="_blank" rel="noreferrer">{item.title}</a></th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.key}><th scope="row">{t(row.key)}</th>{sources.map((item) => <td key={item.id}>{row.value(item) || "—"}</td>)}</tr>)}</tbody></table></div><div className="comparison-mobile">{sources.map((item, index) => <article key={item.id}><span>{translate(language, "comparisonSource", { count: index + 1 })}</span><h3>{item.title}</h3><a href={item.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a>{rows.slice(1).map((row) => <div key={row.key}><strong>{t(row.key)}</strong><p>{row.value(item) || "—"}</p></div>)}</article>)}</div><div className="comparison-notes">{fields.map(({ field, key }) => <label key={field}><span>{t(key)}</span><textarea value={notes[field]} onChange={(event) => onChange(field, event.target.value)} /></label>)}</div></section>;
+}
+
+function CitationPreview({ language, text, sources, citations, hasUnreferencedContext }: { language: Language; text: string; sources: ResearchSource[]; citations: RevisionCitation[]; hasUnreferencedContext: boolean }) {
+  const t = (key: TranslationKey, values?: Record<string, string | number>) => translate(language, key, values);
+  const groups = new Map<string, RevisionCitation[]>();
+  citations.filter((item) => !item.broken).forEach((item) => {
+    const key = `${item.revisedTextStart}:${item.revisedTextEnd}`;
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  });
+  const ordered = [...groups.values()].sort((a, b) => a[0].revisedTextStart - b[0].revisedTextStart);
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  ordered.forEach((group) => {
+    const citation = group[0];
+    if (citation.revisedTextStart < cursor || citation.revisedTextEnd > text.length) return;
+    if (citation.revisedTextStart > cursor) parts.push(<span key={`plain-${cursor}`}>{text.slice(cursor, citation.revisedTextStart)}</span>);
+    const names = group.map((item) => sources.find((source) => source.id === item.sourceId)?.title).filter(Boolean).join("; ");
+    parts.push(<mark key={`${citation.id}-${citation.revisedTextStart}`} tabIndex={0} title={t("citedBy", { sources: names || "—" })}>{text.slice(citation.revisedTextStart, citation.revisedTextEnd)}</mark>);
+    cursor = citation.revisedTextEnd;
+  });
+  if (cursor < text.length) parts.push(<span key={`plain-${cursor}`}>{text.slice(cursor)}</span>);
+  const usedSourceIds = new Set(citations.filter((item) => !item.broken).map((item) => item.sourceId));
+  return <div className="citation-preview"><span>{t("citationPreview")}</span><p>{t("citationPreviewHelp")}</p><div>{parts.length ? parts : text}</div>{usedSourceIds.size > 0 && <ul className="citation-legend" aria-label={t("citationLegend")}>{sources.filter((item) => usedSourceIds.has(item.id)).map((item, index) => <li key={item.id}><i aria-hidden="true">{index + 1}</i><a href={item.url} target="_blank" rel="noreferrer">{item.title}</a></li>)}</ul>}{hasUnreferencedContext && <small>{t("contextWithoutReference")}</small>}</div>;
+}
+
+function CitationEditor({ language, sources, citations, sourceIds, note, error, onSources, onNote, onAdd, onRemove }: { language: Language; sources: ResearchSource[]; citations: RevisionCitation[]; sourceIds: string[]; note: string; error: string; onSources: (ids: string[]) => void; onNote: (value: string) => void; onAdd: () => void; onRemove: (id: string) => void }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  return <section className="citation-card"><h2>{t("citationsTitle")}</h2><p>{t("citationHelp")}</p><div className="citation-form"><fieldset><legend>{t("citationSource")} <RequiredMark language={language} /></legend>{sources.map((item) => <label key={item.id}><input type="checkbox" checked={sourceIds.includes(item.id)} onChange={(event) => onSources(event.target.checked ? [...sourceIds, item.id] : sourceIds.filter((id) => id !== item.id))} />{item.title}</label>)}</fieldset><label>{t("citationNote")}<input value={note} onChange={(event) => onNote(event.target.value)} /></label><button className="secondary-button" onClick={onAdd}>{t("addCitation")}</button></div>{error && <p className="field-error" role="alert">{error}</p>}<ul>{citations.map((item) => { const citedSource = sources.find((source) => source.id === item.sourceId); return <li className={item.broken ? "broken" : ""} key={item.id}><span>“{item.citedText}” — {item.broken ? t("citationBroken") : citedSource?.title || t("citationBroken")}{item.note ? ` · ${item.note}` : ""}</span><span>{citedSource && <a href={citedSource.url} target="_blank" rel="noreferrer">{t("openOriginal")}</a>}<button onClick={() => onRemove(item.id)}>{t("removeCitation")}</button></span></li>; })}</ul>{citations.length === 0 && <p>{t("contextWithoutReference")}</p>}</section>;
+}
+
+function Checklist({ language, checked, toggle }: { language: Language; checked: string[]; toggle: (id: string) => void }) {
+  const t = (key: TranslationKey) => translate(language, key);
+  const items: Array<{ id: typeof CHECKLIST_IDS[number]; key: TranslationKey }> = [{ id: "opened", key: "checklistOpenedSource" }, { id: "identity", key: "checklistIdentity" }, { id: "date", key: "checklistDate" }, { id: "method", key: "checklistMethod" }, { id: "limitation", key: "checklistLimitation" }, { id: "scope", key: "checklistScope" }, { id: "final", key: "checklistFinalText" }];
+  return <section className="checklist-card"><h2>{t("checklistTitle")} <RequiredMark language={language} /></h2><p>{t("checklistLead")}</p>{items.map((item) => <label key={item.id}><input type="checkbox" checked={checked.includes(item.id)} onChange={() => toggle(item.id)} />{t(item.key)}</label>)}</section>;
+}
+
+function ReceiptSection({ label, value }: { label: string; value: string }) { return <div className="receipt-section"><span>{label}</span><p>{value}</p></div>; }
+
+function Actions({ back, children, language }: { back: () => void; children: React.ReactNode; language: Language }) { return <div className="editor-actions"><button className="text-button" onClick={back}>← {translate(language, "back")}</button>{children}</div>; }
