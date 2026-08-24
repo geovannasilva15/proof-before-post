@@ -1,181 +1,80 @@
-# Proof Before Post
+<div align="center">
 
-> Pause. Check the evidence. Then post.
+<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=2563eb&height=180&section=header&text=Proof%20Before%20Post&fontSize=42&fontColor=ffffff&animation=fadeIn&fontAlignY=34&desc=Pause.%20Check%20the%20evidence.%20Then%20post.&descAlignY=57" alt="Proof Before Post" />
 
-Proof Before Post is a bilingual media and information literacy experience that helps young digital creators examine the evidence behind a draft before it reaches an audience. The product guides reflection without asking AI to issue a truth verdict.
+</div>
 
-**Public site:** [proof-before-post.vercel.app](https://proof-before-post.vercel.app/)
+<div align="center">
 
-## Why this matters
+[![Site](https://img.shields.io/badge/Acessar_projeto-Online-2563EB?style=for-the-badge&logo=vercel&logoColor=white)](https://proof-before-post.vercel.app/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000?style=for-the-badge&logo=nextdotjs)](https://nextjs.org/)
+[![License](https://img.shields.io/badge/Licença-MIT-green?style=for-the-badge)](LICENSE)
 
-A UNESCO survey of 500 digital content creators in 45 countries found that 62% did not conduct rigorous and systematic fact-checking before sharing content. Proof Before Post turns that gap into a short, practical learning experience at the moment when a publishing decision can still be changed.
+**Experiência bilíngue de educação midiática que ajuda criadores a examinar evidências antes da publicação — sem delegar à IA o veredito sobre o que é verdadeiro.**
 
-Source: [UNESCO — 2/3 of digital content creators do not check their facts before sharing](https://www.unesco.org/en/articles/2/3-digital-content-creators-do-not-check-their-facts-sharing-want-learn-how-do-so-unesco-survey)
+</div>
 
-## Product flow
+## O problema
 
-1. Paste a caption, script or post, or import a public URL after reviewing the extracted preview.
-2. Select one claim that deserves attention.
-3. Select up to three sources and confirm or correct title, institution, date, methodology, sample, scope and limitations.
-4. Record a human evidence assessment and editorial decision.
-5. Revise only the examined passage, associate sources with added passages, complete the checklist and generate a publication summary.
+Uma pesquisa da UNESCO com 500 criadores de conteúdo em 45 países indicou que 62% não realizavam verificação rigorosa e sistemática antes de compartilhar conteúdo. O Proof Before Post transforma esse desafio em uma experiência curta e prática no momento em que a decisão editorial ainda pode ser revista.
 
-The Evidence Receipt documents the creator's verification process. It does **not** certify that the content is true.
+## Como funciona
 
-## Features
+1. Insira uma legenda, roteiro, publicação ou URL pública.
+2. Selecione uma afirmação que merece atenção.
+3. Compare até três fontes e revise seus metadados.
+4. Registre uma avaliação humana da evidência.
+5. Revise o trecho e gere um **Evidence Receipt**.
 
-- Live web research with verifiable source links.
-- Guided UNESCO demonstration that remains available without the research service.
-- Free-draft review with up to three evidence-sensitive claims.
-- Per-claim evidence relationship map (`supports`, `contextualizes`, `contradicts`, or `inconclusive`) without an automated truth verdict.
-- Explicit evidence-gap prompts that keep missing proof visible before publication.
-- Source verifiability checkpoints for identity, date, method and scope, presented as completeness checks rather than a credibility score.
-- A final readiness panel that summarizes sources, passage references, checklist completion and unresolved evidence before export.
-- A transparent methodology section explaining what the tool organizes and what it deliberately does not decide.
-- Portuguese and English interface.
-- Complete localized flow, including demo content, accessibility labels and receipt export.
-- Editable source metadata with clear research, demo and user-edited provenance.
-- Human-controlled evidence assessment with a required justification.
-- Five editorial actions that produce distinct, editable draft revisions.
-- Original-versus-revised comparison with removed, added and unresolved highlights.
-- Source-to-revision traceability.
-- Private, browser-only review history with search, status filters, resume, duplicate and delete controls.
-- Structured source comparison without a truth score, presented as a table on desktop and source cards on mobile.
-- Visual passage-level citation preview that never inserts hidden markers into copied text.
-- Safe public-URL import with SSRF, redirect, size and timeout controls.
-- Separate, editable translated copy that preserves the original text.
-- Completion checklist and explicit unresolved-evidence status.
-- Complete publication summary as selectable-text PDF, PNG and copyable text.
-- Language-aware browser narration with play, pause, resume and stop controls.
-- Unicode-aware 1,500-character counting, including emoji and combined characters.
-- Responsive layout, keyboard navigation and reduced-motion support.
-- No account or database required for visitors.
+> O recibo documenta o processo de verificação. Ele não certifica que o conteúdo é verdadeiro.
 
-Existing version 1 browser sessions are migrated in place to the current local format without changing the storage key or discarding review content.
+## Recursos principais
 
-## Ethical guardrails
+- Pesquisa web com links verificáveis
+- Fluxo completo em português e inglês
+- Mapa da relação entre afirmações e evidências
+- Comparação entre texto original e revisado
+- Histórico privado armazenado no navegador
+- Exportação em PDF, PNG e texto
+- Narração pelo navegador e suporte a teclado
+- Controles de segurança para importação de URLs
+- Testes de produto, comportamento e regressão com Playwright
 
-Proof Before Post can organize questions and make possible evidence gaps visible. It does not:
+## Princípios éticos
 
-- label content true or false;
-- invent or certify sources;
-- approve publication;
-- replace qualified experts;
-- assign artificial confidence scores;
-- publish on the creator's behalf.
+A plataforma organiza perguntas, fontes e lacunas de evidência, mas não classifica conteúdo como verdadeiro ou falso, não inventa fontes, não aprova publicações e não substitui especialistas.
 
-## Technology
+## Tecnologias
 
-- Next.js 16
-- React 19
-- TypeScript
-- CSS
-- Canvas API and jsPDF for receipt export
-- Playwright for browser-level regression testing
-- Web Speech API for question playback
-- OpenAI Responses API with web search for live, sourced research
+Next.js 16, React 19, TypeScript, CSS, OpenAI Responses API, Canvas API, jsPDF, Web Speech API e Playwright.
 
-Real review sessions are saved only in the visitor's browser so work can be resumed. The visitor can delete one session or all local data; guided demonstrations are never mixed into this history. During live research, the current draft is sent to the server-side analysis route and the configured research service for that request. The repository never contains the API key: the credential is read only by the server-side research and translation routes from `OPENAI_API_KEY`.
+## Executar localmente
 
-## Run locally
-
-Requirements: Node.js 20.9 or newer and npm.
+Requisitos: Node.js 20.9 ou superior e npm.
 
 ```bash
 npm install
-npm run check
-npm run test:e2e
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Abra `http://localhost:3000`.
 
-## Validate the project
+Para validação completa:
 
 ```bash
 npm run check
+npm run test:e2e
 ```
 
-`npm run check` runs ESLint, TypeScript validation, product and behavior tests, and a production build. `npm run test:e2e` builds the application and runs the Playwright browser regression suite; install a Playwright Chromium browser in a standard local or CI environment first.
+## Configuração
 
-## Deploy on Vercel
+Copie `.env.example` e configure `OPENAI_API_KEY` apenas no servidor. Nunca use o prefixo `NEXT_PUBLIC_` para essa credencial.
 
-1. Import this repository into Vercel.
-2. Keep the detected framework as **Next.js**.
-3. Add `OPENAI_API_KEY` as a server-side environment variable.
-4. Optionally set `OPENAI_MODEL`; the default is `gpt-5.6`.
-5. Select **Deploy**.
-
-Do not prefix the key with `NEXT_PUBLIC_`. A `NEXT_PUBLIC_` variable would expose the value to visitors' browsers.
-
-## Project structure
-
-```text
-proof-before-post/
-├── .github/workflows/ci.yml
-├── app/
-│   ├── api/analyze/route.ts
-│   ├── api/extract/route.ts
-│   ├── api/translate/route.ts
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx
-├── data/guided-demo.json
-├── hooks/
-│   ├── useNarrator.ts
-│   └── useReviewHistory.ts
-├── lib/
-│   ├── analysis.ts
-│   ├── i18n.ts
-│   ├── rate-limit.ts
-│   ├── receipt.ts
-│   ├── revision.ts
-│   ├── session.ts
-│   └── text.ts
-├── public/favicon.svg
-├── scripts/
-│   ├── dev-e2e.mjs
-│   └── dev.mjs
-├── tests/
-│   ├── e2e/review-flow.spec.ts
-│   ├── product-guardrails.test.mjs
-│   └── unicode-character-count.test.mjs
-├── .env.example
-├── .gitignore
-├── .nvmrc
-├── eslint.config.mjs
-├── LICENSE
-├── next-env.d.ts
-├── package-lock.json
-├── package.json
-├── playwright.config.ts
-└── tsconfig.json
-```
-
-## Research behavior
-
-The live flow performs web research on the server, requests structured output, and cross-checks every displayed URL against sources returned by the web-search tool. If the research service is missing, times out, or returns no verified sources, the interface shows an explicit error instead of substituting a local or simulated analysis.
-
-The guided UNESCO scenario is clearly labeled as prepared demonstration content. Neither mode certifies that a draft is true.
-
-## Portuguese summary
-
-O Proof Before Post ajuda jovens criadores a revisar as evidências de um conteúdo antes da publicação. A ferramenta orienta perguntas, registra a decisão humana e gera um Evidence Receipt, sem declarar que o conteúdo é verdadeiro ou falso.
-
-Para executar:
-
-```bash
-npm install
-npm run dev
-```
-
-## Team
-
-Developed by:
+## Equipe
 
 - [Geovanna Eduarda da Silva](https://github.com/geovannasilva15)
-- [Matheus Barcelli Marques de Lima (Matheus Marks)](https://github.com/BRMARKS)
+- [Matheus Barcelli Marques de Lima — Matheus Marks](https://github.com/BRMARKS)
 
-## License
+## Licença
 
-MIT License. See [LICENSE](LICENSE).
+Distribuído sob a licença MIT. Consulte [LICENSE](LICENSE).
