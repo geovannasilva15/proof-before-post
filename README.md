@@ -4,6 +4,9 @@
 
 </div>
 
+![Visão explicativa do projeto Proof Before Post](assets/readme-project-overview.svg)
+
+
 <div align="center">
 
 [![Site](https://img.shields.io/badge/Acessar_projeto-Online-2563EB?style=for-the-badge&logo=vercel&logoColor=white)](https://proof-before-post.vercel.app/)
