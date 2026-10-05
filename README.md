@@ -1,55 +1,40 @@
-<div align="center">
+# Proof Before Post
 
-<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=2563eb&height=180&section=header&text=Proof%20Before%20Post&fontSize=42&fontColor=ffffff&animation=fadeIn&fontAlignY=34&desc=Pause.%20Check%20the%20evidence.%20Then%20post.&descAlignY=57" alt="Proof Before Post" />
+**Pause. Check the evidence. Then post.**
 
-</div>
+[Acessar a plataforma](https://proof-before-post.vercel.app/)
 
-![Visão explicativa do projeto Proof Before Post](assets/readme-project-overview.svg)
-
-
-<div align="center">
-
-[![Site](https://img.shields.io/badge/Acessar_projeto-Online-2563EB?style=for-the-badge&logo=vercel&logoColor=white)](https://proof-before-post.vercel.app/)
-[![Next.js](https://img.shields.io/badge/Next.js-16-000?style=for-the-badge&logo=nextdotjs)](https://nextjs.org/)
-[![License](https://img.shields.io/badge/Licença-MIT-green?style=for-the-badge)](LICENSE)
-
-**Experiência bilíngue de educação midiática que ajuda criadores a examinar evidências antes da publicação — sem delegar à IA o veredito sobre o que é verdadeiro.**
-
-</div>
+Plataforma bilíngue de educação midiática criada para ajudar pessoas a revisar evidências antes de publicar um conteúdo. A solução organiza a análise, mas mantém a decisão editorial sob controle humano.
 
 ## O problema
 
-Uma pesquisa da UNESCO com 500 criadores de conteúdo em 45 países indicou que 62% não realizavam verificação rigorosa e sistemática antes de compartilhar conteúdo. O Proof Before Post transforma esse desafio em uma experiência curta e prática no momento em que a decisão editorial ainda pode ser revista.
+Criadores de conteúdo precisam tomar decisões rápidas e nem sempre possuem um processo claro para verificar afirmações, avaliar fontes e registrar as evidências consideradas. O Proof Before Post transforma essa revisão em um fluxo curto, rastreável e fácil de repetir.
 
 ## Como funciona
 
 1. Insira uma legenda, roteiro, publicação ou URL pública.
-2. Selecione uma afirmação que merece atenção.
-3. Compare até três fontes e revise seus metadados.
-4. Registre uma avaliação humana da evidência.
-5. Revise o trecho e gere um **Evidence Receipt**.
+2. Selecione uma afirmação que merece revisão.
+3. Compare até três fontes e seus metadados.
+4. Registre sua própria avaliação das evidências.
+5. Revise o texto e gere um **Evidence Receipt**.
 
-> O recibo documenta o processo de verificação. Ele não certifica que o conteúdo é verdadeiro.
+O recibo documenta o processo realizado. Ele não certifica que um conteúdo é verdadeiro e não substitui especialistas.
 
-## Recursos principais
+## Funcionalidades
 
-- Pesquisa web com links verificáveis
-- Fluxo completo em português e inglês
-- Mapa da relação entre afirmações e evidências
-- Comparação entre texto original e revisado
-- Histórico privado armazenado no navegador
-- Exportação em PDF, PNG e texto
-- Narração pelo navegador e suporte a teclado
-- Controles de segurança para importação de URLs
-- Testes de produto, comportamento e regressão com Playwright
-
-## Princípios éticos
-
-A plataforma organiza perguntas, fontes e lacunas de evidência, mas não classifica conteúdo como verdadeiro ou falso, não inventa fontes, não aprova publicações e não substitui especialistas.
+- fluxo completo em português e inglês;
+- pesquisa com links verificáveis;
+- relação entre afirmações e evidências;
+- comparação entre texto original e revisado;
+- histórico privado armazenado no navegador;
+- exportação em PDF, PNG e texto;
+- narração pelo navegador e navegação por teclado;
+- controles de segurança para importação de URLs;
+- testes de produto, comportamento e regressão.
 
 ## Tecnologias
 
-Next.js 16, React 19, TypeScript, CSS, OpenAI Responses API, Canvas API, jsPDF, Web Speech API e Playwright.
+`Next.js 16` `React 19` `TypeScript` `OpenAI Responses API` `Playwright` `jsPDF` `Web Speech API`
 
 ## Executar localmente
 
@@ -60,18 +45,25 @@ npm install
 npm run dev
 ```
 
-Abra `http://localhost:3000`.
-
-Para validação completa:
+Para executar as verificações:
 
 ```bash
 npm run check
 npm run test:e2e
 ```
 
-## Configuração
+Crie um `.env.local` com base no `.env.example`. A chave da API deve permanecer somente no servidor.
 
-Copie `.env.example` e configure `OPENAI_API_KEY` apenas no servidor. Nunca use o prefixo `NEXT_PUBLIC_` para essa credencial.
+## Estrutura
+
+```text
+app/      interface e rotas
+hooks/    comportamento reutilizável
+lib/      análise, revisão, sessão e exportação
+data/     demonstração guiada
+scripts/  suporte ao desenvolvimento e testes
+tests/    testes de produto e fluxos E2E
+```
 
 ## Equipe
 
@@ -80,4 +72,4 @@ Copie `.env.example` e configure `OPENAI_API_KEY` apenas no servidor. Nunca use 
 
 ## Licença
 
-Distribuído sob a licença MIT. Consulte [LICENSE](LICENSE).
+Distribuído sob a licença MIT.
